@@ -3,12 +3,15 @@ import { Domino } from '../types';
 import { layoutBoard } from '../utils/dominoLayout';
 import { DominoTile } from './DominoTile';
 import { ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { BoardThemeId, FichaThemeId, BOARD_THEMES } from '../utils/themes';
 
 interface DominoBoardProps {
   board: Domino[];
   firstTileIndex: number;
   onPlaySelect?: (side: 'left' | 'right') => void;
   pendingPlaySideSelection?: boolean; // True if the user clicked a playable card and we need to ask left or right
+  boardTheme?: BoardThemeId;
+  fichaTheme?: FichaThemeId;
 }
 
 export const DominoBoard: React.FC<DominoBoardProps> = ({
@@ -16,6 +19,8 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
   firstTileIndex,
   onPlaySelect,
   pendingPlaySideSelection = false,
+  boardTheme = 'havana',
+  fichaTheme = 'havana',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 });
@@ -23,6 +28,8 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
   const [zoomScale, setZoomScale] = useState(1.0);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  const activeBoardTheme = BOARD_THEMES[boardTheme] || BOARD_THEMES.havana;
 
   // Monitor container size
   useEffect(() => {
@@ -187,11 +194,12 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
   return (
     <div 
       ref={containerRef}
-      className={`relative w-full h-full bg-[#1a3c34] rounded-sm shadow-2xl border-[16px] md:border-[22px] border-[#32170d] overflow-hidden flex items-center justify-center min-h-[360px] md:min-h-[420px] select-none ${
+      className={`relative w-full h-full rounded-sm shadow-2xl border-[16px] md:border-[22px] overflow-hidden flex items-center justify-center min-h-[360px] md:min-h-[420px] select-none transition-colors duration-500 ${
         isDragging ? 'cursor-grabbing' : 'cursor-grab'
       }`}
       style={{
-        backgroundImage: 'radial-gradient(circle at center, #244f45, #0f241f)',
+        borderColor: activeBoardTheme.frameBorder,
+        backgroundImage: activeBoardTheme.feltBg,
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8), inset 0 0 35px rgba(0,0,0,0.6)'
       }}
       onMouseDown={handleMouseDown}
@@ -204,13 +212,13 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
       onDoubleClick={handleDoubleClick}
     >
       {/* Felt Board texture */}
-      <div className="absolute inset-0 opacity-20 pointer-events-none bg-repeat" style={{
-        backgroundImage: `url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M40 0l40 40-40 40L0 40z' fill='%23ffffff' fill-opacity='.1' fill-rule='evenodd'/%3E%3C/svg%3E")`,
+      <div className="absolute inset-0 opacity-25 pointer-events-none bg-repeat transition-all duration-500" style={{
+        backgroundImage: activeBoardTheme.svgPattern,
         backgroundSize: '40px 40px'
       }} />
 
       {/* Interaction Hint */}
-      <div className="absolute top-4 left-4 pointer-events-none opacity-50 text-[9px] md:text-xs font-mono text-[#eee8da] flex items-center gap-1.5 select-none z-10 bg-[#32170d]/60 px-2.5 py-1 rounded border border-[#83746f]/30 backdrop-blur-sm">
+      <div className="absolute top-4 left-4 pointer-events-none opacity-60 text-[9px] md:text-xs font-mono text-white/90 flex items-center gap-1.5 select-none z-10 bg-black/60 px-2.5 py-1 rounded border border-white/20 backdrop-blur-sm shadow-md">
         <span>🖱️ Drag to Pan</span>
         <span>•</span>
         <span>🎡 Scroll to Zoom</span>
@@ -219,13 +227,13 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
       </div>
 
       {board.length === 0 ? (
-        <div className="flex flex-col items-center justify-center text-emerald-100/60 text-center p-6 space-y-3 z-10 select-none">
-          <div className="w-16 h-16 rounded-full border border-dashed border-emerald-100/30 flex items-center justify-center text-2xl font-bold font-sans">
+        <div className="flex flex-col items-center justify-center text-white/70 text-center p-6 space-y-3 z-10 select-none">
+          <div className="w-16 h-16 rounded-full border border-dashed border-white/30 flex items-center justify-center text-2xl font-bold font-sans shadow-lg">
             9|9
           </div>
           <div>
-            <p className="font-sans font-medium text-emerald-100/90 text-sm md:text-base">Board is empty</p>
-            <p className="text-xs text-emerald-200/50 max-w-xs mt-1">Play the first tile of the round to begin the chain of play.</p>
+            <p className="font-sans font-medium text-white/90 text-sm md:text-base">{activeBoardTheme.name}</p>
+            <p className="text-xs text-white/60 max-w-xs mt-1">Play the first tile of the round to begin the chain of play.</p>
           </div>
         </div>
       ) : (
@@ -276,6 +284,7 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
                   highlighted={isLastPlayed}
                   orientation={pos.orientation}
                   size="md"
+                  fichaTheme={fichaTheme}
                 />
               </div>
             );

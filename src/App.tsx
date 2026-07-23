@@ -10,6 +10,7 @@ import { Domino, GameRoom, Player, RoomListItem } from './types';
 import { DominoBoard } from './components/DominoBoard';
 import { DominoTile } from './components/DominoTile';
 import { translations, Language } from './translations';
+import { BoardThemeId, FichaThemeId, BOARD_THEMES, FICHA_THEMES, MATCHED_PRESETS } from './utils/themes';
 
 // Browser-based Web Audio API synthesizer for high-fidelity offline sounds
 class DominoSynth {
@@ -562,11 +563,29 @@ export default function App() {
   });
   const [reactionCooldown, setReactionCooldown] = useState<number>(0);
 
+  // Board & Ficha Custom Themes
+  const [boardTheme, setBoardTheme] = useState<BoardThemeId>(() => {
+    return (localStorage.getItem('cuban_dominoes_board_theme') as BoardThemeId) || 'havana';
+  });
+  const [fichaTheme, setFichaTheme] = useState<FichaThemeId>(() => {
+    return (localStorage.getItem('cuban_dominoes_ficha_theme') as FichaThemeId) || 'havana';
+  });
+
   // Settings States
   const [language] = useState<Language>('en');
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [settingsName, setSettingsName] = useState<string>('');
+  const [settingsBoardTheme, setSettingsBoardTheme] = useState<BoardThemeId>('havana');
+  const [settingsFichaTheme, setSettingsFichaTheme] = useState<FichaThemeId>('havana');
   const [settingsSavedToast, setSettingsSavedToast] = useState<boolean>(false);
+
+  // Helper to open settings with current values
+  const openSettingsModal = () => {
+    setSettingsName(playerName);
+    setSettingsBoardTheme(boardTheme);
+    setSettingsFichaTheme(fichaTheme);
+    setShowSettings(true);
+  };
 
   // Helper translation getter
   const t = translations[language];
@@ -578,6 +597,12 @@ export default function App() {
 
     setPlayerName(trimmed);
     localStorage.setItem('cuban_dominoes_player_name', trimmed);
+
+    setBoardTheme(settingsBoardTheme);
+    localStorage.setItem('cuban_dominoes_board_theme', settingsBoardTheme);
+
+    setFichaTheme(settingsFichaTheme);
+    localStorage.setItem('cuban_dominoes_ficha_theme', settingsFichaTheme);
 
     // If currently in a room, send update to server
     if (roomCode && playerId) {
@@ -1316,10 +1341,7 @@ export default function App() {
                 {soundEnabled ? t.mute : t.unmute}
               </button>
               <button 
-                onClick={() => {
-                  setSettingsName(playerName);
-                  setShowSettings(true);
-                }}
+                onClick={openSettingsModal}
                 className="border border-[#006876] hover:bg-[#006876]/30 px-3 py-1 cursor-pointer transition-colors bg-[#200d07]/90 text-[#8debfd] font-bold flex items-center gap-1.5 rounded-xs shadow-sm"
                 title={t.settingsTooltip}
               >
@@ -1817,10 +1839,7 @@ export default function App() {
 
               {/* Settings Switch */}
               <button 
-                onClick={() => {
-                  setSettingsName(playerName);
-                  setShowSettings(true);
-                }}
+                onClick={openSettingsModal}
                 className="p-3 rounded-md bg-[#200d07] border border-[#006876] text-[#8debfd] hover:bg-[#006876]/20 transition-all cursor-pointer"
                 title={t.settingsTooltip}
               >
@@ -1874,10 +1893,7 @@ export default function App() {
                 )}
 
                 <button 
-                  onClick={() => {
-                    setSettingsName(playerName);
-                    setShowSettings(true);
-                  }}
+                  onClick={openSettingsModal}
                   className="p-1.5 rounded bg-[#200d07] border border-[#006876] text-[#8debfd] hover:bg-[#006876]/30 transition-all cursor-pointer"
                   title={t.settingsTooltip}
                 >
@@ -2245,6 +2261,8 @@ export default function App() {
                             }
                           }}
                           pendingPlaySideSelection={pendingPlaySides !== null}
+                          boardTheme={boardTheme}
+                          fichaTheme={fichaTheme}
                         />
                       )}
                     </div>
@@ -2348,6 +2366,7 @@ export default function App() {
                                 val2={item.val[1]}
                                 playable={true}
                                 highlighted={isSelected}
+                                fichaTheme={fichaTheme}
                                 onClick={() => {
                                   setSelectedLocalIdx(idx);
                                   // Trigger play logic if active turn and playable
@@ -2732,17 +2751,17 @@ export default function App() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-lg bg-[#1c1c1f] border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden"
+              className="w-full max-w-xl bg-[#1c1c1f] border border-white/10 rounded-2xl p-5 sm:p-7 shadow-2xl space-y-6 relative overflow-hidden max-h-[90vh] flex flex-col"
             >
               {/* Top Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-white/10">
+              <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-[#006876]/30 border border-[#006876] flex items-center justify-center text-[#8debfd] shadow-md">
                     <Settings className="w-5 h-5 text-[#8debfd]" />
                   </div>
                   <div>
                     <h3 className="text-lg font-display font-black text-white uppercase tracking-wider">{t.settingsTitle}</h3>
-                    <p className="text-xs text-white/50 font-serif italic">{t.settingsSub}</p>
+                    <p className="text-xs text-white/50 font-serif italic">Custom Mesas, Fichas & Preferences</p>
                   </div>
                 </div>
                 <button 
@@ -2753,8 +2772,8 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Form Body */}
-              <div className="space-y-5">
+              {/* Form Body - Scrollable */}
+              <div className="space-y-6 overflow-y-auto pr-1 flex-1 custom-scrollbar">
                 {/* Section 1: Profile Name */}
                 <div className="space-y-2">
                   <label className="block text-xs font-mono uppercase tracking-widest text-[#8debfd] font-bold">
@@ -2770,9 +2789,187 @@ export default function App() {
                   />
                 </div>
 
-                {/* Section 2: Audio Settings */}
-                <div className="space-y-3 pt-3 border-t border-white/10">
-                  <label className="block text-xs font-mono uppercase tracking-widest text-[#fe7328] font-bold">
+                {/* Section 2: Matched Theme Presets */}
+                <div className="space-y-3 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-mono uppercase tracking-widest text-[#fbbf24] font-bold flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-[#fbbf24]" />
+                      Matched Theme Presets (5 Pairs)
+                    </label>
+                    <span className="text-[10px] text-white/40 font-mono">Board + Fichas</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {MATCHED_PRESETS.map((preset) => {
+                      const isSelected = settingsBoardTheme === preset.boardId && settingsFichaTheme === preset.fichaId;
+                      const boardDef = BOARD_THEMES[preset.boardId];
+                      const fichaDef = FICHA_THEMES[preset.fichaId];
+
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            setSettingsBoardTheme(preset.boardId);
+                            setSettingsFichaTheme(preset.fichaId);
+                          }}
+                          className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#006876]/30 border-[#8debfd] ring-1 ring-[#8debfd] shadow-md'
+                              : 'bg-[#111113] border-white/10 hover:border-white/30 hover:bg-[#161619]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-sm font-bold text-white font-sans flex items-center gap-1.5">
+                              <span>{preset.icon}</span>
+                              <span>{preset.name}</span>
+                            </span>
+                            {isSelected && <Check className="w-4 h-4 text-[#8debfd] shrink-0" />}
+                          </div>
+
+                          <p className="text-[10px] text-white/60 font-sans line-clamp-1 mb-2">
+                            {preset.description}
+                          </p>
+
+                          {/* Mini visual swatch */}
+                          <div className="flex items-center gap-2 pt-1 border-t border-white/5">
+                            {/* Board swatch */}
+                            <div 
+                              className="w-6 h-6 rounded-md border flex items-center justify-center shadow-sm"
+                              style={{
+                                borderColor: boardDef.frameBorder,
+                                backgroundImage: boardDef.feltBg
+                              }}
+                              title={`Board: ${boardDef.name}`}
+                            />
+                            {/* Ficha swatch */}
+                            <div 
+                              className="w-5 h-7 rounded border flex flex-col items-center justify-between p-0.5 shadow-sm"
+                              style={{
+                                backgroundColor: fichaDef.previewBg,
+                                borderColor: fichaDef.pipColor
+                              }}
+                              title={`Fichas: ${fichaDef.name}`}
+                            >
+                              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: fichaDef.previewPip }} />
+                              <div className="w-full h-[1px] bg-current opacity-30" />
+                              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: fichaDef.previewPip }} />
+                            </div>
+                            <span className="text-[9px] font-mono text-white/50 truncate">
+                              {boardDef.name} + {fichaDef.name}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Section 3: Custom Boards (5 Mesas) */}
+                <div className="space-y-3 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-mono uppercase tracking-widest text-[#8debfd] font-bold">
+                      Custom Domino Board (5 Mesas)
+                    </label>
+                    <span className="text-[10px] text-white/40 font-mono">Independent Board</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {(Object.keys(BOARD_THEMES) as BoardThemeId[]).map((bId) => {
+                      const b = BOARD_THEMES[bId];
+                      const isSelected = settingsBoardTheme === bId;
+
+                      return (
+                        <button
+                          key={bId}
+                          type="button"
+                          onClick={() => setSettingsBoardTheme(bId)}
+                          className={`p-3 rounded-xl border transition-all text-left flex items-center gap-3 cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#006876]/40 border-[#8debfd] ring-1 ring-[#8debfd] text-white shadow-md'
+                              : 'bg-[#111113] border-white/10 text-white/70 hover:border-white/30 hover:text-white'
+                          }`}
+                        >
+                          {/* Board Swatch */}
+                          <div 
+                            className="w-10 h-10 rounded-lg border-2 shrink-0 flex items-center justify-center shadow-md relative overflow-hidden"
+                            style={{
+                              borderColor: b.frameBorder,
+                              backgroundImage: b.feltBg
+                            }}
+                          >
+                            <div className="absolute inset-0 opacity-30 bg-repeat" style={{ backgroundImage: b.svgPattern, backgroundSize: '20px 20px' }} />
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold font-mono text-white truncate">{b.name}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-[#8debfd] shrink-0" />}
+                            </div>
+                            <p className="text-[10px] text-white/50 font-sans truncate">{b.tagline}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Section 4: Custom Fichas (5 Sets of Domino Tiles) */}
+                <div className="space-y-3 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-mono uppercase tracking-widest text-[#fe7328] font-bold">
+                      Custom Fichas (5 Domino Tile Sets)
+                    </label>
+                    <span className="text-[10px] text-white/40 font-mono">Independent Tiles</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {(Object.keys(FICHA_THEMES) as FichaThemeId[]).map((fId) => {
+                      const f = FICHA_THEMES[fId];
+                      const isSelected = settingsFichaTheme === fId;
+
+                      return (
+                        <button
+                          key={fId}
+                          type="button"
+                          onClick={() => setSettingsFichaTheme(fId)}
+                          className={`p-3 rounded-xl border transition-all text-left flex items-center gap-3 cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#fe7328]/20 border-[#fe7328] ring-1 ring-[#fe7328] text-white shadow-md'
+                              : 'bg-[#111113] border-white/10 text-white/70 hover:border-white/30 hover:text-white'
+                          }`}
+                        >
+                          {/* Ficha Mini Tile Preview */}
+                          <div 
+                            className="w-7 h-11 rounded border flex flex-col items-center justify-between p-1 shrink-0 shadow-md relative"
+                            style={{
+                              backgroundColor: f.previewBg,
+                              borderColor: f.previewPip
+                            }}
+                          >
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.previewPip }} />
+                            <div className="w-full h-[1px] bg-current opacity-30 relative">
+                              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 rounded-full border border-black/40" style={{ backgroundImage: f.spinnerGradient }} />
+                            </div>
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.previewPip }} />
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold font-mono text-white truncate">{f.name}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-[#fe7328] shrink-0" />}
+                            </div>
+                            <p className="text-[10px] text-white/50 font-sans truncate">{f.tagline}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Section 5: Audio Settings */}
+                <div className="space-y-3 pt-4 border-t border-white/10">
+                  <label className="block text-xs font-mono uppercase tracking-widest text-[#8debfd] font-bold">
                     {t.audioTitle}
                   </label>
                   
@@ -2821,7 +3018,7 @@ export default function App() {
                 <motion.div
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="p-3 bg-[#006876]/40 border border-[#8debfd]/50 text-[#8debfd] rounded-xl text-center font-mono text-xs font-bold uppercase flex items-center justify-center gap-2"
+                  className="p-3 bg-[#006876]/40 border border-[#8debfd]/50 text-[#8debfd] rounded-xl text-center font-mono text-xs font-bold uppercase flex items-center justify-center gap-2 shrink-0"
                 >
                   <Check className="w-4 h-4 text-[#8debfd]" />
                   {t.settingsSavedToast}
@@ -2829,7 +3026,7 @@ export default function App() {
               )}
 
               {/* Footer Save Button */}
-              <div className="pt-3 border-t border-white/10 flex gap-3">
+              <div className="pt-3 border-t border-white/10 flex gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowSettings(false)}

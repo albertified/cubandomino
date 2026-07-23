@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
+import { FichaThemeId, FICHA_THEMES } from '../utils/themes';
 
 interface DominoTileProps {
   val1: number;
@@ -11,6 +12,7 @@ interface DominoTileProps {
   className?: string;
   size?: 'sm' | 'md' | 'lg';
   orientation?: 'horizontal' | 'vertical';
+  fichaTheme?: FichaThemeId;
 }
 
 const pipPositions: { [key: number]: number[] } = {
@@ -26,7 +28,7 @@ const pipPositions: { [key: number]: number[] } = {
   9: [0, 1, 2, 3, 4, 5, 6, 7, 8],
 };
 
-const PipGrid: React.FC<{ value: number; sizeClass: string }> = ({ value, sizeClass }) => {
+const PipGrid: React.FC<{ value: number; sizeClass: string; pipColor?: string }> = ({ value, sizeClass, pipColor }) => {
   const activePips = pipPositions[value] || [];
   
   return (
@@ -37,11 +39,12 @@ const PipGrid: React.FC<{ value: number; sizeClass: string }> = ({ value, sizeCl
           <div key={idx} className="flex items-center justify-center w-full h-full">
             {isActive && (
               <div 
-                className={`rounded-full bg-[#32170d] shadow-inner transition-all duration-300 ${
+                className={`rounded-full shadow-inner transition-all duration-300 ${
                   sizeClass === 'sm' ? 'w-[3px] h-[3px]' : 
                   sizeClass === 'md' ? 'w-[5px] h-[5px]' : 'w-[7px] h-[7px]'
                 }`}
                 style={{
+                  backgroundColor: pipColor || '#32170d',
                   boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.8)'
                 }}
               />
@@ -63,6 +66,7 @@ export const DominoTile: React.FC<DominoTileProps> = ({
   className = '',
   size = 'md',
   orientation,
+  fichaTheme = 'havana',
 }) => {
   // Dimensions based on size
   const sizeClasses = {
@@ -93,12 +97,13 @@ export const DominoTile: React.FC<DominoTileProps> = ({
   };
 
   const config = sizeClasses[size];
+  const theme = FICHA_THEMES[fichaTheme] || FICHA_THEMES.havana;
 
-  // Ivory Vintage Cream color theme
-  const baseBg = 'bg-[#fff9eb] text-[#1d1c13] border-[#d5c3bd] shadow-[0_6px_14px_rgba(0,0,0,0.35)]';
-  const highlightedBg = 'bg-[#fff9eb] border-[#fe7328] ring-2 ring-[#fe7328] shadow-[0_8px_20px_rgba(254,115,40,0.3)]';
-  const playableBg = 'bg-[#fff9eb] border-[#006876] hover:bg-[#fffdf7] cursor-pointer ring-2 ring-[#006876] hover:scale-105 active:scale-95 transition-all shadow-[0_8px_18px_rgba(0,104,118,0.25)]';
-  const disabledBg = 'opacity-60 bg-[#eee8da] border-[#d5c3bd]';
+  // Custom theme background & border states
+  const baseBg = theme.tileBgClass;
+  const highlightedBg = `${theme.tileBgClass} ${theme.highlightBorder}`;
+  const playableBg = `${theme.tileBgClass} ${theme.playableRing}`;
+  const disabledBg = `opacity-60 ${theme.tileBgClass}`;
 
   let currentBg = baseBg;
   if (highlighted) {
@@ -109,10 +114,6 @@ export const DominoTile: React.FC<DominoTileProps> = ({
     currentBg = disabledBg;
   }
 
-  // Double tile is rendered horizontally with values side-by-side (Wait, let's keep vertical split for standard layout!)
-  // If isDouble, layout split is horizontal (so left and right halves).
-  // If regular, layout split is vertical (top and bottom halves).
-  // Overridden if orientation is explicitly specified.
   const isVertical = orientation ? (orientation === 'vertical') : !isDouble;
 
   return (
@@ -127,21 +128,21 @@ export const DominoTile: React.FC<DominoTileProps> = ({
     >
       {/* Half 1 */}
       <div className="flex-1 w-full h-full flex items-center justify-center p-[2px]">
-        <PipGrid value={val1} sizeClass={config.pipSize} />
+        <PipGrid value={val1} sizeClass={config.pipSize} pipColor={theme.pipColor} />
       </div>
 
       {/* Dividing Line & Clavito/Spinner */}
-      <div className={`relative ${isVertical ? 'w-full h-[1px]' : 'h-full w-[1px]'} bg-[#83746f]/40`}>
+      <div className={`relative ${isVertical ? 'w-full h-[1px]' : 'h-full w-[1px]'} bg-current opacity-30`}>
         {/* Cuban Clavito (metal spinner knob) at exact center */}
         <div 
-          className={`absolute rounded-full border border-[#3b1200] shadow-sm transform -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2 ${config.spinner}`}
-          style={{ backgroundImage: 'radial-gradient(circle at 35% 35%, #fe7328, #3b1200)' }}
+          className={`absolute rounded-full border border-black/40 shadow-sm transform -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2 ${config.spinner}`}
+          style={{ backgroundImage: theme.spinnerGradient }}
         />
       </div>
 
       {/* Half 2 */}
       <div className="flex-1 w-full h-full flex items-center justify-center p-[2px]">
-        <PipGrid value={val2} sizeClass={config.pipSize} />
+        <PipGrid value={val2} sizeClass={config.pipSize} pipColor={theme.pipColor} />
       </div>
     </motion.div>
   );
