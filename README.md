@@ -7,7 +7,7 @@ An interactive, full-stack web application for playing Cuban-style dominoes onli
 ## Live Demo
 
 * **Live App:** [cubandomino.onrender.com](https://cubandomino.onrender.com)
-* **Custom Domain:** *(Coming Soon)*
+* **Custom Domain:** *[topcubandomino.com]*
 
 ---
 
