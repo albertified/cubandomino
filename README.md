@@ -64,5 +64,13 @@ This project is configured to deploy as a Web Service on Render.
  * Environment Variables: Set PORT (automatically assigned by Render).
 License
 This project is licensed under the MIT License - see the LICENSE file for details.
-
+<script src='https://storage.ko-fi.com/cdn/scripts/overlay-widget.js'></script>
+<script>
+  kofiWidgetOverlay.draw('albert82461', {
+    'type': 'floating-chat',
+    'floating-chat.donateButton.text': 'Support me',
+    'floating-chat.donateButton.background-color': '#00b9fe',
+    'floating-chat.donateButton.text-color': '#fff'
+  });
+</script>
 
