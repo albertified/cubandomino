@@ -132,12 +132,18 @@ export function layoutBoard(
 
     const k = i - (firstTileIndex + 1);
     const curr_dir = getRightDirectionDynamic(k, numLeft, numRight);
+    const next_dir = getRightDirectionDynamic(k + 1, numLeft, numRight);
     const prev_dir = i === firstTileIndex + 1 ? 'right' : prevPos.dir;
 
     // Determine orientation of current tile
     let curr_orient: 'horizontal' | 'vertical';
     if (currIsDouble) {
-      curr_orient = curr_dir === 'right' || curr_dir === 'left' ? 'vertical' : 'horizontal';
+      const isAtBend = (curr_dir === 'right' || curr_dir === 'left') && (next_dir === 'down' || next_dir === 'up');
+      if (curr_dir === 'down' || curr_dir === 'up' || isAtBend) {
+        curr_orient = 'horizontal';
+      } else {
+        curr_orient = 'vertical';
+      }
     } else {
       curr_orient = curr_dir === 'right' || curr_dir === 'left' ? 'horizontal' : 'vertical';
     }
@@ -163,12 +169,18 @@ export function layoutBoard(
 
     const k = firstTileIndex - 1 - i;
     const curr_dir = getLeftDirectionDynamic(k, numLeft, numRight);
+    const next_dir = getLeftDirectionDynamic(k + 1, numLeft, numRight);
     const prev_dir = i === firstTileIndex - 1 ? 'left' : prevPos.dir;
 
     // Determine orientation of current tile
     let curr_orient: 'horizontal' | 'vertical';
     if (currIsDouble) {
-      curr_orient = curr_dir === 'right' || curr_dir === 'left' ? 'vertical' : 'horizontal';
+      const isAtBend = (curr_dir === 'right' || curr_dir === 'left') && (next_dir === 'down' || next_dir === 'up');
+      if (curr_dir === 'down' || curr_dir === 'up' || isAtBend) {
+        curr_orient = 'horizontal';
+      } else {
+        curr_orient = 'vertical';
+      }
     } else {
       curr_orient = curr_dir === 'right' || curr_dir === 'left' ? 'horizontal' : 'vertical';
     }
