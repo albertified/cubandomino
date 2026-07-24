@@ -9,6 +9,7 @@ import {
 import { Domino, GameRoom, Player, RoomListItem } from './types';
 import { DominoBoard } from './components/DominoBoard';
 import { DominoTile } from './components/DominoTile';
+import { CookieDisclosure } from './components/CookieDisclosure';
 import { translations, Language } from './translations';
 import { BoardThemeId, FichaThemeId, BOARD_THEMES, FICHA_THEMES, MATCHED_PRESETS } from './utils/themes';
 
@@ -574,6 +575,7 @@ export default function App() {
   // Settings States
   const [language] = useState<Language>('en');
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [showCookieModal, setShowCookieModal] = useState<boolean>(false);
   const [settingsName, setSettingsName] = useState<string>('');
   const [settingsBoardTheme, setSettingsBoardTheme] = useState<BoardThemeId>('havana');
   const [settingsFichaTheme, setSettingsFichaTheme] = useState<FichaThemeId>('havana');
@@ -3011,6 +3013,36 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+
+                {/* Section 6: Cookie & Privacy Disclosure */}
+                <div className="space-y-3 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-mono uppercase tracking-widest text-amber-300 font-bold">
+                      Privacy & Data Governance
+                    </label>
+                    <span className="text-[10px] text-white/40 font-mono">Cookies & Local Storage</span>
+                  </div>
+
+                  <div className="p-3 bg-[#111113] border border-white/10 rounded-xl flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-bold text-white font-mono flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Do Not Sell/Share & Cookie Preferences</span>
+                      </div>
+                      <p className="text-[10px] text-white/50 font-sans">
+                        Manage privacy options, notice at collection, and storage preferences.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowCookieModal(true)}
+                      className="px-3 py-1.5 rounded-lg border border-[#006876] bg-[#006876]/30 hover:bg-[#006876]/50 text-[#8debfd] font-mono text-xs font-bold shrink-0 cursor-pointer transition-all"
+                    >
+                      Manage
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Feedback Toast */}
@@ -3049,6 +3081,12 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* CCPA Cookie Disclosure Banner & Settings Modal */}
+      <CookieDisclosure 
+        isOpenForce={showCookieModal}
+        onCloseForce={() => setShowCookieModal(false)}
+      />
 
     </div>
   );
