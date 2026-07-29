@@ -970,25 +970,33 @@ setInterval(() => {
 }, 30 * 60 * 1000);
 
 async function bootstrap() {
-  // Serve static build in production
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa'
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
+  try {
+    // Serve static build in production
+    if (process.env.NODE_ENV !== 'production') {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa'
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Cuban Dominoes Server running on port ${PORT}`);
-  });
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Cuban Dominoes Server running on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error('Error bootstrapping server:', err);
+    process.exit(1);
+  }
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Unhandled bootstrap error:', err);
+  process.exit(1);
+});

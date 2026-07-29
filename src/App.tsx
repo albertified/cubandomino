@@ -10,6 +10,10 @@ import { Domino, GameRoom, Player, RoomListItem } from './types';
 import { DominoBoard } from './components/DominoBoard';
 import { DominoTile } from './components/DominoTile';
 import { CookieDisclosure } from './components/CookieDisclosure';
+import { RulesAndSeoSection } from './components/RulesAndSeoSection';
+import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
+import { TermsOfServicePage } from './components/TermsOfServicePage';
+import { ContactAboutPage } from './components/ContactAboutPage';
 import { translations, Language } from './translations';
 import { BoardThemeId, FichaThemeId, BOARD_THEMES, FICHA_THEMES, MATCHED_PRESETS } from './utils/themes';
 
@@ -572,10 +576,11 @@ export default function App() {
     return (localStorage.getItem('cuban_dominoes_ficha_theme') as FichaThemeId) || 'havana';
   });
 
-  // Settings States
+  // Settings & Static Page States
   const [language] = useState<Language>('en');
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showCookieModal, setShowCookieModal] = useState<boolean>(false);
+  const [activeStaticPage, setActiveStaticPage] = useState<'privacy' | 'terms' | 'about' | null>(null);
   const [settingsName, setSettingsName] = useState<string>('');
   const [settingsBoardTheme, setSettingsBoardTheme] = useState<BoardThemeId>('havana');
   const [settingsFichaTheme, setSettingsFichaTheme] = useState<FichaThemeId>('havana');
@@ -1308,8 +1313,27 @@ export default function App() {
   return (
     <div className="min-h-screen text-[#fff9eb] selection:bg-[#fe7328] selection:text-[#32170d] font-sans overflow-x-hidden">
       
+      {/* STATIC LEGAL & INFO PAGES */}
+      {activeStaticPage === 'privacy' && (
+        <div className="min-h-screen p-4 sm:p-6 flex flex-col items-center">
+          <PrivacyPolicyPage onBack={() => setActiveStaticPage(null)} />
+        </div>
+      )}
+
+      {activeStaticPage === 'terms' && (
+        <div className="min-h-screen p-4 sm:p-6 flex flex-col items-center">
+          <TermsOfServicePage onBack={() => setActiveStaticPage(null)} />
+        </div>
+      )}
+
+      {activeStaticPage === 'about' && (
+        <div className="min-h-screen p-4 sm:p-6 flex flex-col items-center">
+          <ContactAboutPage onBack={() => setActiveStaticPage(null)} />
+        </div>
+      )}
+
       {/* 1. NOT IN ROOM VIEWS (Name Profile or Room Menu) */}
-      {(!hasName || !roomCode) && (
+      {activeStaticPage === null && (!hasName || !roomCode) && (
         <div className="min-h-screen flex flex-col items-center justify-center p-4 max-w-4xl mx-auto">
           {/* Main Logo & Title */}
           <header className="w-full flex justify-between items-end border-b-2 border-[#d5c3bd]/30 pb-4 mb-10">
@@ -1792,8 +1816,57 @@ export default function App() {
             </div>
           )}
 
-          <footer className="mt-16 text-[10px] text-[#83746f] font-mono tracking-widest uppercase font-bold text-center">
-            HAVANA SOCIAL CLUB • CUBAN DOMINOES DOBLE NUEVE SYSTEM
+          {/* Crawlable SEO & Rules Article Section */}
+          <RulesAndSeoSection />
+
+          {/* Mandatory Legal & Info Footer */}
+          <footer className="mt-12 pt-8 border-t border-[#d5c3bd]/20 w-full max-w-5xl mx-auto text-center space-y-4 pb-12">
+            <div className="flex flex-wrap items-center justify-center gap-4 text-xs font-mono font-bold text-[#eee8da]/80">
+              <button
+                type="button"
+                onClick={() => setActiveStaticPage('privacy')}
+                className="hover:text-[#8debfd] transition-colors cursor-pointer underline underline-offset-4"
+              >
+                Privacy Policy
+              </button>
+              <span className="text-[#83746f]">•</span>
+              <button
+                type="button"
+                onClick={() => setActiveStaticPage('terms')}
+                className="hover:text-[#8debfd] transition-colors cursor-pointer underline underline-offset-4"
+              >
+                Terms of Service
+              </button>
+              <span className="text-[#83746f]">•</span>
+              <button
+                type="button"
+                onClick={() => setActiveStaticPage('about')}
+                className="hover:text-[#8debfd] transition-colors cursor-pointer underline underline-offset-4"
+              >
+                About & Contact
+              </button>
+              <span className="text-[#83746f]">•</span>
+              <a
+                href="https://github.com/albertified/cubandomino"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-[#8debfd] transition-colors cursor-pointer underline underline-offset-4 inline-flex items-center gap-1 text-[#8debfd]"
+              >
+                GitHub Repo
+              </a>
+              <span className="text-[#83746f]">•</span>
+              <button
+                type="button"
+                onClick={() => setShowCookieModal(true)}
+                className="hover:text-[#8debfd] transition-colors cursor-pointer underline underline-offset-4"
+              >
+                Cookie Preferences
+              </button>
+            </div>
+
+            <p className="text-[10px] text-[#83746f] font-mono tracking-widest uppercase font-bold">
+              TOP CUBAN DOMINO • HAVANA SOCIAL CLUB • DOUBLE-NINE 55-TILE SYSTEM
+            </p>
           </footer>
         </div>
       )}
@@ -3014,33 +3087,70 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Section 6: Cookie & Privacy Disclosure */}
+                {/* Section 6: Privacy, Terms & Info Pages */}
                 <div className="space-y-3 pt-4 border-t border-white/10">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-mono uppercase tracking-widest text-amber-300 font-bold">
-                      Privacy & Data Governance
+                      Privacy & Site Governance
                     </label>
-                    <span className="text-[10px] text-white/40 font-mono">Cookies & Local Storage</span>
+                    <span className="text-[10px] text-white/40 font-mono">Legal & Info</span>
                   </div>
 
-                  <div className="p-3 bg-[#111113] border border-white/10 rounded-xl flex items-center justify-between gap-3">
-                    <div className="space-y-0.5">
-                      <div className="text-xs font-bold text-white font-mono flex items-center gap-1.5">
-                        <Lock className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Do Not Sell/Share & Cookie Preferences</span>
+                  <div className="p-3 bg-[#111113] border border-white/10 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-bold text-white font-mono flex items-center gap-1.5">
+                          <Lock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Cookie & Ad Preferences</span>
+                        </div>
+                        <p className="text-[10px] text-white/50 font-sans">
+                          Manage privacy options, ad settings, and storage preferences.
+                        </p>
                       </div>
-                      <p className="text-[10px] text-white/50 font-sans">
-                        Manage privacy options, notice at collection, and storage preferences.
-                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowCookieModal(true)}
+                        className="px-3 py-1.5 rounded-lg border border-[#006876] bg-[#006876]/30 hover:bg-[#006876]/50 text-[#8debfd] font-mono text-xs font-bold shrink-0 cursor-pointer transition-all"
+                      >
+                        Manage
+                      </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setShowCookieModal(true)}
-                      className="px-3 py-1.5 rounded-lg border border-[#006876] bg-[#006876]/30 hover:bg-[#006876]/50 text-[#8debfd] font-mono text-xs font-bold shrink-0 cursor-pointer transition-all"
-                    >
-                      Manage
-                    </button>
+                    <div className="pt-2 border-t border-white/10 flex flex-wrap gap-2 text-[11px] font-mono font-bold">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSettings(false);
+                          setActiveStaticPage('privacy');
+                        }}
+                        className="text-[#8debfd] hover:underline"
+                      >
+                        Privacy Policy
+                      </button>
+                      <span className="text-white/30">•</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSettings(false);
+                          setActiveStaticPage('terms');
+                        }}
+                        className="text-[#8debfd] hover:underline"
+                      >
+                        Terms of Service
+                      </button>
+                      <span className="text-white/30">•</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSettings(false);
+                          setActiveStaticPage('about');
+                        }}
+                        className="text-[#8debfd] hover:underline"
+                      >
+                        About & Contact
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
