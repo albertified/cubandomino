@@ -109,6 +109,7 @@ function dealRound(room: GameRoom) {
   room.roundWinnerSlot = null;
   room.roundBlocked = false;
   room.roundPointsEarned = 0;
+  room.consecutivePasses = 0;
 
   // Deal 10 tiles to each of the 4 slots
   for (let i = 0; i < 4; i++) {
@@ -153,15 +154,23 @@ function handleRoundWin(room: GameRoom, winnerSlot: number) {
   for (const [v1, v2] of hand1) losingPoints += (v1 + v2);
   for (const [v1, v2] of hand2) losingPoints += (v1 + v2);
 
-  room.scores[winningTeam] += losingPoints;
+  const multiplier = room.scoreMultiplier || 1;
+  const totalPoints = losingPoints * multiplier;
+
+  room.scores[winningTeam] += totalPoints;
   room.roundWinnerSlot = winnerSlot;
   room.roundBlocked = false;
-  room.roundPointsEarned = losingPoints;
+  room.roundPointsEarned = totalPoints;
   room.status = 'round_ended';
   room.startingTeam = winningTeam; // Winner team gets starting rights on subsequent round!
+  room.scoreMultiplier = 1; // Reset multiplier after a win!
 
   room.logs.push(`🎉 DOMINO! ${winner.name} played their last tile!`);
-  room.logs.push(`🏆 Team ${winningTeam === 0 ? 'A (Slots 1 & 3)' : 'B (Slots 2 & 4)'} wins the round and earns ${losingPoints} points!`);
+  if (multiplier > 1) {
+    room.logs.push(`🏆 Team ${winningTeam === 0 ? 'A (Slots 1 & 3)' : 'B (Slots 2 & 4)'} wins the round and earns ${totalPoints} points (${losingPoints} pts × ${multiplier}x DOUBLE bonus from previous tie)!`);
+  } else {
+    room.logs.push(`🏆 Team ${winningTeam === 0 ? 'A (Slots 1 & 3)' : 'B (Slots 2 & 4)'} wins the round and earns ${totalPoints} points!`);
+  }
 
   // Check game win
   if (room.scores[winningTeam] >= room.targetScore) {
@@ -173,7 +182,7 @@ function handleRoundWin(room: GameRoom, winnerSlot: number) {
 // Handle blocked game
 function handleTrancado(room: GameRoom) {
   // Blocked! Nobody can make a valid move.
-  // Evaluate hands to see who wins.
+  // Evaluate individual hands to see who wins.
   const sums = [0, 0, 0, 0];
   for (let i = 0; i < 4; i++) {
     const hand = room.players[i]?.hand || [];
@@ -185,32 +194,60 @@ function handleTrancado(room: GameRoom) {
   const team0Sum = sums[0] + sums[2];
   const team1Sum = sums[1] + sums[3];
 
-  let winningTeam = 0;
-  let losingPoints = 0;
+  // Find minimum individual hand value
+  const minIndividualSum = Math.min(...sums);
+  const minSlots = [0, 1, 2, 3].filter(i => sums[i] === minIndividualSum);
 
-  if (team0Sum < team1Sum) {
-    winningTeam = 0;
-    losingPoints = team1Sum;
-  } else if (team1Sum < team0Sum) {
-    winningTeam = 1;
-    losingPoints = team0Sum;
-  } else {
-    // Tie in blocked game: traditional rules can vary, let's award to Team 0 as default tie-breaker
-    winningTeam = 0;
-    losingPoints = team1Sum;
-  }
-
-  room.scores[winningTeam] += losingPoints;
-  room.roundWinnerSlot = -1; // -1 represents block/trancado
-  room.roundBlocked = true;
-  room.roundPointsEarned = losingPoints;
-  room.status = 'round_ended';
-  room.startingTeam = winningTeam; // Winner team of blocked game gets starting rights on subsequent round!
+  const team0HasMin = minSlots.some(s => s % 2 === 0);
+  const team1HasMin = minSlots.some(s => s % 2 === 1);
 
   room.logs.push(`⚠️ TRANCADO! The game is blocked. No player has a valid move.`);
-  room.logs.push(`📊 Scores remaining: Player 1 (Slot 1): ${sums[0]}pts | Player 2 (Slot 2): ${sums[1]}pts | Player 3 (Slot 3): ${sums[2]}pts | Player 4 (Slot 4): ${sums[3]}pts.`);
-  room.logs.push(`📊 Team A Combined: ${team0Sum}pts vs Team B Combined: ${team1Sum}pts.`);
-  room.logs.push(`🏆 Team ${winningTeam === 0 ? 'A' : 'B'} wins the block with lower points and earns ${losingPoints} points!`);
+  room.logs.push(`📊 Individual hands: ${room.players[0]?.name || 'P1'}: ${sums[0]}pts | ${room.players[1]?.name || 'P2'}: ${sums[1]}pts | ${room.players[2]?.name || 'P3'}: ${sums[2]}pts | ${room.players[3]?.name || 'P4'}: ${sums[3]}pts.`);
+
+  // If players from BOTH opposing teams tie for the lowest individual hand value
+  if (team0HasMin && team1HasMin) {
+    const currentMultiplier = room.scoreMultiplier || 1;
+    const nextMultiplier = currentMultiplier * 2;
+    room.scoreMultiplier = nextMultiplier;
+
+    room.roundWinnerSlot = -1;
+    room.roundBlocked = true;
+    room.roundPointsEarned = 0;
+    room.status = 'round_ended';
+
+    const pA = room.players[minSlots.find(s => s % 2 === 0)!]?.name || 'Team A Player';
+    const pB = room.players[minSlots.find(s => s % 2 === 1)!]?.name || 'Team B Player';
+
+    room.logs.push(`🤝 TIE IN TRANCADO! Both ${pA} (Team A) and ${pB} (Team B) share the lowest hand value of ${minIndividualSum}pts.`);
+    room.logs.push(`⚖️ Zero points awarded this round. Next round points will be DOUBLED (${nextMultiplier}x)!`);
+    return;
+  }
+
+  // Not a tie: one team clearly holds the lowest individual hand!
+  const winningTeam = team0HasMin ? 0 : 1;
+  const losingPoints = winningTeam === 0 ? team1Sum : team0Sum;
+  const multiplier = room.scoreMultiplier || 1;
+  const totalPoints = losingPoints * multiplier;
+
+  const winningPlayersList = minSlots
+    .filter(s => s % 2 === winningTeam)
+    .map(s => room.players[s]?.name || `Slot ${s + 1}`)
+    .join(', ');
+
+  room.scores[winningTeam] += totalPoints;
+  room.roundWinnerSlot = -1; // -1 represents block/trancado
+  room.roundBlocked = true;
+  room.roundPointsEarned = totalPoints;
+  room.status = 'round_ended';
+  room.startingTeam = winningTeam; // Winner team gets starting rights on subsequent round!
+  room.scoreMultiplier = 1; // Reset multiplier after a win!
+
+  room.logs.push(`🏆 Lowest individual hand: ${winningPlayersList} (${minIndividualSum}pts). Team ${winningTeam === 0 ? 'A' : 'B'} wins the block!`);
+  if (multiplier > 1) {
+    room.logs.push(`🎉 Team ${winningTeam === 0 ? 'A' : 'B'} earns ${totalPoints} points (${losingPoints} pts × ${multiplier}x DOUBLE bonus from previous tie)!`);
+  } else {
+    room.logs.push(`🎉 Team ${winningTeam === 0 ? 'A' : 'B'} earns ${totalPoints} points (sum of losing team's remaining tiles)!`);
+  }
 
   if (room.scores[winningTeam] >= room.targetScore) {
     room.status = 'game_over';
@@ -218,30 +255,24 @@ function handleTrancado(room: GameRoom) {
   }
 }
 
-// Advance turn, skipping players who have no valid moves.
-// If all 4 players are consecutively skipped, trigger trancado.
+// Advance turn counter-clockwise (0 -> 3 -> 2 -> 1 -> 0)
 function advanceTurn(room: GameRoom) {
-  let consecutiveSkips = 0;
+  room.turn = (room.turn + 3) % 4;
 
-  while (consecutiveSkips < 4) {
-    room.turn = (room.turn + 3) % 4;
-    const nextPlayer = room.players[room.turn];
-
-    if (nextPlayer && nextPlayer.hand.length > 0) {
-      if (hasValidMoves(nextPlayer.hand, room.board)) {
-        room.lastUpdateTime = Date.now();
-        return;
-      } else {
-        room.logs.push(`⚠️ ${nextPlayer.name} has no valid moves and is automatically skipped.`);
-        consecutiveSkips++;
-      }
-    } else {
-      consecutiveSkips++;
+  // Handle empty player slots if any (auto-pass for empty slots)
+  let emptySkips = 0;
+  while (!room.players[room.turn] && emptySkips < 4) {
+    emptySkips++;
+    room.consecutivePasses = (room.consecutivePasses || 0) + 1;
+    room.logs.push(`⚠️ Slot ${room.turn + 1} is empty and passes.`);
+    if (room.consecutivePasses >= 4) {
+      handleTrancado(room);
+      return;
     }
+    room.turn = (room.turn + 3) % 4;
   }
 
-  // If we looped through all 4 slots and no one can play, trigger blocked game
-  handleTrancado(room);
+  room.lastUpdateTime = Date.now();
 }
 
 // Execute player tile placement
@@ -279,6 +310,9 @@ function executePlayTile(room: GameRoom, slot: number, tileIndex: number, side: 
     room.logs.push(`🔹 ${player.name} plays [${tile[0]}|${tile[1]}] on Right.`);
   }
 
+  // Any successful play resets consecutive passes to 0
+  room.consecutivePasses = 0;
+
   room.lastUpdateTime = Date.now();
 
   // Check round win
@@ -289,45 +323,89 @@ function executePlayTile(room: GameRoom, slot: number, tileIndex: number, side: 
   }
 }
 
-// Play bots and skips recursively until a human player is active (or game ends)
-function runBotsAndSkips(room: GameRoom) {
-  let loops = 0;
-  while (room.status === 'playing' && loops < 50) {
-    loops++;
+// Store active bot timers per room code to prevent duplicate timers
+const botTimers = new Map<string, NodeJS.Timeout>();
 
-    // If starting a new round, check if there are human players on the starting team.
-    // If so, do not auto-play bots. Let the human team decide who starts.
-    if (room.board.length === 0 && room.startingTeam !== undefined) {
-      const hasHumanOnStartingTeam = room.players.some((p, sIdx) => 
-        p && p.type === 'human' && (sIdx % 2 === room.startingTeam)
-      );
-      if (hasHumanOnStartingTeam) {
-        const activePlayer = room.players[room.turn];
-        if (activePlayer && activePlayer.type === 'bot') {
-          break; // Wait for the human on the team to make the starting play
+function clearBotTimer(code: string) {
+  const normalizedCode = code.toUpperCase();
+  const timer = botTimers.get(normalizedCode);
+  if (timer) {
+    clearTimeout(timer);
+    botTimers.delete(normalizedCode);
+  }
+}
+
+// Schedule bot turn asynchronously with a realistic 2-5 second random delay
+function scheduleBotTurnIfNeeded(room: GameRoom) {
+  clearBotTimer(room.roomCode);
+
+  if (room.status !== 'playing') {
+    return;
+  }
+
+  // If starting a new round, check if there are human players on the starting team.
+  // If so, do not auto-play bots. Let the human team decide who starts.
+  if (room.board.length === 0 && room.startingTeam !== undefined) {
+    const hasHumanOnStartingTeam = room.players.some((p, sIdx) => 
+      p && p.type === 'human' && (sIdx % 2 === room.startingTeam)
+    );
+    if (hasHumanOnStartingTeam) {
+      const activePlayer = room.players[room.turn];
+      if (activePlayer && activePlayer.type === 'bot') {
+        return; // Wait for the human on the starting team to make the first move
+      }
+    }
+  }
+
+  const activePlayer = room.players[room.turn];
+  if (!activePlayer) {
+    // Empty slot, advance turn automatically
+    advanceTurn(room);
+    scheduleBotTurnIfNeeded(room);
+    return;
+  }
+
+  if (activePlayer.type === 'bot') {
+    // Random delay between 2000ms and 5000ms (2 to 5 seconds)
+    const delay = Math.floor(Math.random() * 3000) + 2000;
+
+    const timer = setTimeout(() => {
+      botTimers.delete(room.roomCode.toUpperCase());
+
+      const currentRoom = rooms.get(room.roomCode.toUpperCase());
+      if (!currentRoom || currentRoom.status !== 'playing') {
+        return;
+      }
+
+      const botPlayer = currentRoom.players[currentRoom.turn];
+      if (!botPlayer || botPlayer.type !== 'bot') {
+        return;
+      }
+
+      const botMove = getBotMove(botPlayer.hand, currentRoom.board);
+      if (botMove) {
+        executePlayTile(currentRoom, currentRoom.turn, botMove.tileIndex, botMove.side);
+      } else {
+        currentRoom.consecutivePasses = (currentRoom.consecutivePasses || 0) + 1;
+        currentRoom.logs.push(`⚠️ ${botPlayer.name} has no valid moves and passes.`);
+        
+        if (currentRoom.consecutivePasses >= 4) {
+          handleTrancado(currentRoom);
+        } else {
+          advanceTurn(currentRoom);
+          scheduleBotTurnIfNeeded(currentRoom);
         }
       }
-    }
 
-    const activePlayer = room.players[room.turn];
-    if (!activePlayer) {
-      // Empty slot, treat as auto-pass
-      advanceTurn(room);
-      continue;
-    }
+      currentRoom.lastUpdateTime = Date.now();
 
-    if (activePlayer.type === 'bot') {
-      const botMove = getBotMove(activePlayer.hand, room.board);
-      if (botMove) {
-        executePlayTile(room, room.turn, botMove.tileIndex, botMove.side);
-      } else {
-        room.logs.push(`⚠️ ${activePlayer.name} has no valid moves and is automatically skipped.`);
-        advanceTurn(room);
+      // Schedule next turn if the subsequent player is also a bot
+      if (currentRoom.status === 'playing') {
+        scheduleBotTurnIfNeeded(currentRoom);
       }
-    } else {
-      // It's a human player's turn, wait for input!
-      break;
-    }
+    }, delay);
+
+    botTimers.set(room.roomCode.toUpperCase(), timer);
   }
 }
 
@@ -618,6 +696,40 @@ app.post('/api/rooms/:code/remove-slot', (req, res) => {
   res.json({ room });
 });
 
+// Store active starter reveal timers per room code
+const starterTimers = new Map<string, NodeJS.Timeout>();
+
+function clearStarterTimer(code: string) {
+  const normalizedCode = code.toUpperCase();
+  const timer = starterTimers.get(normalizedCode);
+  if (timer) {
+    clearTimeout(timer);
+    starterTimers.delete(normalizedCode);
+  }
+}
+
+function startMatchAfterReveal(room: GameRoom) {
+  clearStarterTimer(room.roomCode);
+  if (room.status !== 'selecting_starter') return;
+
+  dealRound(room);
+  room.status = 'playing';
+  room.lastUpdateTime = Date.now();
+  scheduleBotTurnIfNeeded(room);
+}
+
+function scheduleStarterTransition(room: GameRoom, delayMs: number = 4500) {
+  clearStarterTimer(room.roomCode);
+  const timer = setTimeout(() => {
+    starterTimers.delete(room.roomCode.toUpperCase());
+    const currentRoom = rooms.get(room.roomCode.toUpperCase());
+    if (currentRoom && currentRoom.status === 'selecting_starter') {
+      startMatchAfterReveal(currentRoom);
+    }
+  }, delayMs);
+  starterTimers.set(room.roomCode.toUpperCase(), timer);
+}
+
 // Start Game
 app.post('/api/rooms/:code/start', (req, res) => {
   const { code } = req.params;
@@ -652,6 +764,7 @@ app.post('/api/rooms/:code/start', (req, res) => {
   // Set up the Starter Selection Phase for the first round of the game
   room.status = 'selecting_starter';
   room.scores = [0, 0];
+  room.scoreMultiplier = 1;
   
   // Pick two random dominoes with different sums to prevent any ties in value
   const deck = shuffleDeck(generateDoubleNineDeck());
@@ -713,9 +826,7 @@ app.post('/api/rooms/:code/start', (req, res) => {
     room.logs.push(`🎴 Team B gets [${team1Tile[0]}|${team1Tile[1]}] (Value: ${sum1}).`);
     room.logs.push(`🎲 Team ${startingTeam === 0 ? 'A' : 'B'} has the lower value tile and starts the match!`);
 
-    dealRound(room);
-    room.status = 'playing';
-    runBotsAndSkips(room);
+    scheduleStarterTransition(room, 4500);
   }
 
   room.lastUpdateTime = Date.now();
@@ -734,6 +845,10 @@ app.post('/api/rooms/:code/select-starter', (req, res) => {
 
   if (room.status !== 'selecting_starter' || !room.starterSelection) {
     return res.status(400).json({ error: 'Starter selection is not active' });
+  }
+
+  if (room.starterSelection.chosenIndex !== null) {
+    return res.status(400).json({ error: 'Starter tile has already been chosen' });
   }
 
   const idx = Number(optionIndex);
@@ -783,14 +898,26 @@ app.post('/api/rooms/:code/select-starter', (req, res) => {
   room.logs.push(`🎴 Team B gets [${team1Tile[0]}|${team1Tile[1]}] (Value: ${sum1}).`);
   room.logs.push(`🎲 Team ${startingTeam === 0 ? 'A' : 'B'} has the lower value tile and starts the match!`);
 
-  // Deal hands for the first round
-  dealRound(room);
-  room.status = 'playing';
-
-  // Run subsequent bots if any
-  runBotsAndSkips(room);
+  // Schedule transition to playing status after reveal
+  scheduleStarterTransition(room, 4500);
 
   room.lastUpdateTime = Date.now();
+  res.json({ room });
+});
+
+// Confirm Starter Reveal (Skip waiting timer)
+app.post('/api/rooms/:code/confirm-starter', (req, res) => {
+  const { code } = req.params;
+  const room = rooms.get(code.toUpperCase());
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (room.status === 'selecting_starter' && room.starterSelection?.chosenIndex !== null) {
+    startMatchAfterReveal(room);
+  }
+
   res.json({ room });
 });
 
@@ -861,7 +988,45 @@ app.post('/api/rooms/:code/play', (req, res) => {
   executePlayTile(room, room.turn, parsedTileIndex, side);
 
   // Run subsequent bots and skips
-  runBotsAndSkips(room);
+  scheduleBotTurnIfNeeded(room);
+
+  room.lastUpdateTime = Date.now();
+  res.json({ room });
+});
+
+// Pass Turn
+app.post('/api/rooms/:code/pass', (req, res) => {
+  const { code } = req.params;
+  const { playerId } = req.body;
+  const room = rooms.get(code.toUpperCase());
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (room.status !== 'playing') {
+    return res.status(400).json({ error: 'Game is not currently active' });
+  }
+
+  const activePlayer = room.players[room.turn];
+  if (!activePlayer || activePlayer.id !== playerId) {
+    return res.status(400).json({ error: 'It is not your turn to play' });
+  }
+
+  // Prevent passing if player has valid moves!
+  if (hasValidMoves(activePlayer.hand, room.board)) {
+    return res.status(400).json({ error: 'You have legal dominoes to play and cannot pass!' });
+  }
+
+  room.consecutivePasses = (room.consecutivePasses || 0) + 1;
+  room.logs.push(`⚠️ ${activePlayer.name} has no valid moves and passes.`);
+
+  if (room.consecutivePasses >= 4) {
+    handleTrancado(room);
+  } else {
+    advanceTurn(room);
+    scheduleBotTurnIfNeeded(room);
+  }
 
   room.lastUpdateTime = Date.now();
   res.json({ room });
@@ -884,7 +1049,7 @@ app.post('/api/rooms/:code/next-round', (req, res) => {
   dealRound(room);
 
   // If starter is bot, play automatically
-  runBotsAndSkips(room);
+  scheduleBotTurnIfNeeded(room);
 
   room.lastUpdateTime = Date.now();
   res.json({ room });
@@ -901,6 +1066,7 @@ app.post('/api/rooms/:code/reset', (req, res) => {
 
   room.status = 'waiting';
   room.scores = [0, 0];
+  room.scoreMultiplier = 1;
   room.board = [];
   room.firstTileIndex = 0;
   room.roundWinnerSlot = null;

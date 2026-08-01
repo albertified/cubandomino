@@ -4,7 +4,7 @@ import {
   Trophy, Users, Play, Plus, LogOut, RefreshCw, 
   Bot, ShieldAlert, Sparkles, Send, Clock, HelpCircle, 
   ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info, Music,
-  Globe, Lock, Search, Eye, Settings, Check
+  Globe, Lock, Search, Eye, Settings, Check, SkipForward
 } from 'lucide-react';
 import { Domino, GameRoom, Player, RoomListItem } from './types';
 import { DominoBoard } from './components/DominoBoard';
@@ -1120,6 +1120,41 @@ export default function App() {
       audio.playClack();
     } catch (err: any) {
       setError(err.message);
+    }
+  };
+
+  const confirmStarterReveal = async () => {
+    if (!roomCode) return;
+    try {
+      const response = await fetch(`/api/rooms/${roomCode}/confirm-starter`, {
+        method: 'POST',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setRoom(data.room);
+      }
+    } catch (err) {
+      console.error('Failed to confirm starter:', err);
+    }
+  };
+
+  const passTurn = async () => {
+    if (!roomCode || !playerId) return;
+    try {
+      const response = await fetch(`/api/rooms/${roomCode}/pass`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        setError(data.error || 'Cannot pass');
+        return;
+      }
+      const data = await response.json();
+      setRoom(data.room);
+    } catch (err: any) {
+      setError(err.message || 'Failed to pass turn');
     }
   };
 
@@ -2242,89 +2277,183 @@ export default function App() {
                     <div className="flex-1 min-h-[380px] z-10 flex flex-col justify-center items-center">
                       {room.status === 'selecting_starter' && room.starterSelection ? (
                         <div className="flex flex-col justify-center items-center py-4 px-4 text-center max-w-xl mx-auto w-full">
-                          {/* Banner header */}
-                          <div className="mb-4">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[#fbbf24] font-bold uppercase tracking-wider font-mono">
-                              ⚡ Match Ceremony
-                            </span>
-                            <h2 className="text-xl font-bold font-sans tracking-tight text-white mt-2">
-                              Starter Selection Draw
-                            </h2>
-                            <p className="text-[11px] text-white/50 max-w-md mx-auto mt-1 font-sans">
-                              We have drawn two random dominoes. The team that picks the tile with the <b>lower value</b> starts the game.
-                            </p>
-                          </div>
-
-                          {/* Display who is selecting */}
-                          {(() => {
-                            const isMyTeamSelecting = playerSlot !== null && (playerSlot % 2 === room.starterSelection.selectingTeam);
-                            const teamName = room.starterSelection.selectingTeam === 0 ? 'Team A (Slots 1 & 3)' : 'Team B (Slots 2 & 4)';
-                            
-                            return (
-                              <div className="w-full bg-[#1c1c1f]/80 border border-white/5 rounded-2xl p-4 mb-4 shadow-xl relative overflow-hidden">
-                                <div className="absolute top-0 left-0 w-1 h-full bg-[#fbbf24]" />
-                                
-                                {isMyTeamSelecting ? (
-                                  <div>
-                                    <h3 className="text-xs font-bold text-[#fbbf24] uppercase tracking-wider font-mono">
-                                      👉 It is Your Team's Turn!
-                                    </h3>
-                                    <p className="text-[11px] text-white/80 mt-1">
-                                      Either you or your partner can click one of the two facedown dominoes below to draw for your team.
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <div>
-                                    <h3 className="text-xs font-bold text-teal-400 uppercase tracking-wider font-mono animate-pulse">
-                                      ⏳ Waiting for Teammates...
-                                    </h3>
-                                    <p className="text-[11px] text-white/60 mt-1">
-                                      {teamName} is currently choosing their facedown tile.
-                                    </p>
-                                  </div>
-                                )}
+                          {room.starterSelection.chosenIndex === null ? (
+                            <>
+                              {/* Banner header */}
+                              <div className="mb-4">
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[#fbbf24] font-bold uppercase tracking-wider font-mono">
+                                  ⚡ Match Ceremony
+                                </span>
+                                <h2 className="text-xl font-bold font-sans tracking-tight text-white mt-2">
+                                  Starter Selection Draw
+                                </h2>
+                                <p className="text-[11px] text-white/50 max-w-md mx-auto mt-1 font-sans">
+                                  We have drawn two random dominoes. The team that picks the tile with the <b>lower value</b> starts the game.
+                                </p>
                               </div>
-                            );
-                          })()}
 
-                          {/* Facedown tiles container */}
-                          <div className="flex justify-center items-center gap-6 md:gap-10 my-2">
-                            {room.starterSelection.options.map((_, idx) => {
-                              const isMyTeamSelecting = playerSlot !== null && (playerSlot % 2 === room.starterSelection!.selectingTeam);
-                              
-                              return (
-                                <button
-                                  key={idx}
-                                  onClick={() => isMyTeamSelecting && selectStarterTile(idx)}
-                                  disabled={!isMyTeamSelecting}
-                                  className={`group relative flex flex-col items-center justify-center p-2 rounded-2xl transition-all duration-300 border ${
-                                    isMyTeamSelecting
-                                      ? 'bg-[#1c1c1f] hover:bg-[#222226] border-white/5 hover:border-[#fbbf24]/50 cursor-pointer hover:scale-105 active:scale-95 shadow-lg'
-                                      : 'bg-[#1c1c1f]/40 border-white/5 opacity-80 cursor-not-allowed'
-                                  }`}
-                                >
-                                  {/* Facedown Domino Visual */}
-                                  <div className="w-16 h-28 bg-[#161618] border border-white/10 rounded-xl flex flex-col items-center justify-center relative shadow-2xl overflow-hidden">
-                                    {isMyTeamSelecting && (
-                                      <div className="absolute inset-0 bg-gradient-to-t from-[#fbbf24]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                                    )}
+                              {/* Display who is selecting */}
+                              {(() => {
+                                const isMyTeamSelecting = playerSlot !== null && (playerSlot % 2 === room.starterSelection.selectingTeam);
+                                const teamName = room.starterSelection.selectingTeam === 0 ? 'Team A (Slots 1 & 3)' : 'Team B (Slots 2 & 4)';
+                                
+                                return (
+                                  <div className="w-full bg-[#1c1c1f]/80 border border-white/5 rounded-2xl p-4 mb-4 shadow-xl relative overflow-hidden">
+                                    <div className="absolute top-0 left-0 w-1 h-full bg-[#fbbf24]" />
                                     
-                                    <div className="absolute inset-1.5 border border-white/5 rounded-lg flex flex-col items-center justify-between py-4">
-                                      <div className="w-1 h-1 rounded-full bg-white/10" />
-                                      <div className="font-mono text-lg font-bold text-[#fbbf24]/30 group-hover:text-[#fbbf24]/60 transition-colors">
-                                        ?
+                                    {isMyTeamSelecting ? (
+                                      <div>
+                                        <h3 className="text-xs font-bold text-[#fbbf24] uppercase tracking-wider font-mono">
+                                          👉 It is Your Team's Turn!
+                                        </h3>
+                                        <p className="text-[11px] text-white/80 mt-1">
+                                          Either you or your partner can click one of the two facedown dominoes below to draw for your team.
+                                        </p>
                                       </div>
-                                      <div className="w-1 h-1 rounded-full bg-white/10" />
-                                    </div>
+                                    ) : (
+                                      <div>
+                                        <h3 className="text-xs font-bold text-teal-400 uppercase tracking-wider font-mono animate-pulse">
+                                          ⏳ Waiting for Teammates...
+                                        </h3>
+                                        <p className="text-[11px] text-white/60 mt-1">
+                                          {teamName} is currently choosing their facedown tile.
+                                        </p>
+                                      </div>
+                                    )}
                                   </div>
+                                );
+                              })()}
+
+                              {/* Facedown tiles container */}
+                              <div className="flex justify-center items-center gap-6 md:gap-10 my-2">
+                                {room.starterSelection.options.map((_, idx) => {
+                                  const isMyTeamSelecting = playerSlot !== null && (playerSlot % 2 === room.starterSelection!.selectingTeam);
                                   
-                                  <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-white/40 group-hover:text-white/60 mt-2 transition-colors">
-                                    Tile {idx + 1}
-                                  </span>
+                                  return (
+                                    <button
+                                      key={idx}
+                                      onClick={() => isMyTeamSelecting && selectStarterTile(idx)}
+                                      disabled={!isMyTeamSelecting}
+                                      className={`group relative flex flex-col items-center justify-center p-2 rounded-2xl transition-all duration-300 border ${
+                                        isMyTeamSelecting
+                                          ? 'bg-[#1c1c1f] hover:bg-[#222226] border-white/5 hover:border-[#fbbf24]/50 cursor-pointer hover:scale-105 active:scale-95 shadow-lg'
+                                          : 'bg-[#1c1c1f]/40 border-white/5 opacity-80 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      {/* Facedown Domino Visual */}
+                                      <div className="w-16 h-28 bg-[#161618] border border-white/10 rounded-xl flex flex-col items-center justify-center relative shadow-2xl overflow-hidden">
+                                        {isMyTeamSelecting && (
+                                          <div className="absolute inset-0 bg-gradient-to-t from-[#fbbf24]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        )}
+                                        
+                                        <div className="absolute inset-1.5 border border-white/5 rounded-lg flex flex-col items-center justify-between py-4">
+                                          <div className="w-1 h-1 rounded-full bg-white/10" />
+                                          <div className="font-mono text-lg font-bold text-[#fbbf24]/30 group-hover:text-[#fbbf24]/60 transition-colors">
+                                            ?
+                                          </div>
+                                          <div className="w-1 h-1 rounded-full bg-white/10" />
+                                        </div>
+                                      </div>
+                                      
+                                      <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-white/40 group-hover:text-white/60 mt-2 transition-colors">
+                                        Tile {idx + 1}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          ) : (
+                            /* REVEAL STATE WHEN TILE HAS BEEN CHOSEN */
+                            <motion.div 
+                              initial={{ opacity: 0, scale: 0.95 }} 
+                              animate={{ opacity: 1, scale: 1 }}
+                              className="w-full flex flex-col items-center"
+                            >
+                              <div className="mb-4">
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold uppercase tracking-wider font-mono">
+                                  🎴 Reveal & Flip Ceremony
+                                </span>
+                                <h2 className="text-xl font-bold font-sans tracking-tight text-white mt-2">
+                                  Starter Dominoes Flipped!
+                                </h2>
+                                <p className="text-[11px] text-white/60 max-w-md mx-auto mt-1 font-sans">
+                                  Here are the two dominoes drawn. The team with the <b>lower value tile</b> starts the game!
+                                </p>
+                              </div>
+
+                              {/* Revealed Domino Tiles Grid */}
+                              <div className="flex justify-center items-center gap-6 md:gap-12 my-3">
+                                {room.starterSelection.options.map((optionTile, idx) => {
+                                  const isChosenOption = idx === room.starterSelection!.chosenIndex;
+                                  const selectingTeam = room.starterSelection!.selectingTeam;
+                                  const assignedTeam = isChosenOption ? selectingTeam : (1 - selectingTeam);
+                                  
+                                  const tileVal = optionTile[0] + optionTile[1];
+                                  const isWinner = room.startingTeam === assignedTeam;
+
+                                  return (
+                                    <motion.div 
+                                      key={idx}
+                                      initial={{ rotateY: 180, scale: 0.8 }}
+                                      animate={{ rotateY: 0, scale: 1 }}
+                                      transition={{ duration: 0.6, delay: idx * 0.15 }}
+                                      className={`relative flex flex-col items-center p-3 sm:p-4 rounded-2xl border transition-all ${
+                                        isWinner 
+                                          ? 'bg-[#fbbf24]/10 border-[#fbbf24] ring-2 ring-[#fbbf24]/40 shadow-2xl scale-105' 
+                                          : 'bg-[#1c1c1f]/60 border-white/10 opacity-70'
+                                      }`}
+                                    >
+                                      {/* Winner Badge */}
+                                      {isWinner && (
+                                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#fbbf24] text-[#111113] px-2.5 py-0.5 rounded-full font-mono text-[9px] font-extrabold uppercase tracking-widest shadow-lg flex items-center gap-1 z-20 whitespace-nowrap">
+                                          👑 STARTS FIRST
+                                        </div>
+                                      )}
+
+                                      <div className="my-1.5">
+                                        <DominoTile 
+                                          val1={optionTile[0]} 
+                                          val2={optionTile[1]} 
+                                          size="lg" 
+                                          fichaTheme={fichaTheme}
+                                        />
+                                      </div>
+
+                                      <div className="mt-2 text-center space-y-0.5">
+                                        <span className={`text-[10px] font-mono font-bold uppercase block ${
+                                          assignedTeam === 0 ? 'text-[#fbbf24]' : 'text-teal-400'
+                                        }`}>
+                                          Team {assignedTeam === 0 ? 'A' : 'B'} {isChosenOption ? '(Chosen)' : '(Unchosen)'}
+                                        </span>
+                                        <span className="text-xs font-mono font-bold text-white/90 block">
+                                          [{optionTile[0]}|{optionTile[1]}] • Value: {tileVal}
+                                        </span>
+                                      </div>
+                                    </motion.div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Winner Announcement Banner */}
+                              <div className="w-full bg-[#1c1c1f] border border-[#fbbf24]/30 rounded-2xl p-4 mt-2 shadow-2xl relative overflow-hidden text-center space-y-2">
+                                <p className="text-sm font-bold text-white font-sans">
+                                  🎉 Team {room.startingTeam === 0 ? 'A' : 'B'} drew the lower tile and starts the match!
+                                </p>
+                                <p className="text-[10px] font-mono text-white/50 animate-pulse">
+                                  Dealing 10 dominoes per player and setting up board...
+                                </p>
+
+                                <button
+                                  onClick={confirmStarterReveal}
+                                  className="mt-1 px-5 py-2 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-mono font-bold text-xs rounded-xl transition-all cursor-pointer uppercase tracking-wider shadow-md inline-flex items-center gap-1.5"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-[#111113]" />
+                                  Start Match Now
                                 </button>
-                              );
-                            })}
-                          </div>
+                              </div>
+                            </motion.div>
+                          )}
                         </div>
                       ) : (
                         <DominoBoard 
@@ -2506,12 +2635,49 @@ export default function App() {
                       )}
                     </div>
 
-                    {room.turn === playerSlot && room.status === 'playing' && playableIndexes.length === 0 && myHand.length > 0 && (
-                      <div className="mt-3 bg-amber-950/20 border border-amber-900/30 p-3 rounded-xl text-center z-10 animate-pulse">
-                        <p className="text-xs text-[#fbbf24] font-semibold flex items-center justify-center gap-1.5">
-                          <ShieldAlert className="w-4 h-4 text-[#fbbf24]" />
-                          No valid moves in hand. Your turn transitions automatically.
-                        </p>
+                    {room.turn === playerSlot && room.status === 'playing' && myHand.length > 0 && (
+                      <div className="mt-4 z-10">
+                        {playableIndexes.length === 0 ? (
+                          <div className="bg-[#fbbf24]/10 border border-[#fbbf24]/30 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xl">
+                            <div className="flex items-center gap-3 text-left">
+                              <div className="p-2.5 rounded-xl bg-[#fbbf24]/20 text-[#fbbf24] shrink-0">
+                                <ShieldAlert className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold text-[#fbbf24] font-mono uppercase tracking-wider">
+                                  No Playable Dominoes in Hand
+                                </h4>
+                                <p className="text-[11px] text-white/70 font-sans mt-0.5">
+                                  None of your tiles match the board ends. You must click PASS to pass your turn.
+                                </p>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={passTurn}
+                              className="px-6 py-2.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-mono font-bold text-xs rounded-xl shadow-xl transition-all cursor-pointer uppercase tracking-wider flex items-center gap-2 shrink-0 animate-bounce hover:animate-none active:scale-95"
+                            >
+                              <SkipForward className="w-4 h-4 fill-[#111113]" />
+                              PASO / PASS TURN
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 rounded-xl">
+                            <div className="flex items-center gap-2 text-emerald-400 text-xs font-medium font-sans">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                              <span>It's your turn! Select a highlighted tile to place on the board.</span>
+                            </div>
+                            <button
+                              onClick={passTurn}
+                              disabled={true}
+                              title="You have legal dominoes to play and cannot pass!"
+                              className="px-3 py-1.5 bg-white/5 border border-white/10 text-white/30 font-mono font-bold text-[10px] rounded-lg cursor-not-allowed uppercase tracking-wider flex items-center gap-1.5"
+                            >
+                              <SkipForward className="w-3 h-3 opacity-30" />
+                              PASS (Disabled)
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2537,7 +2703,14 @@ export default function App() {
             {/* Score lists */}
             {room.status !== 'waiting' && (
               <div className="p-6 border-b border-white/5 flex flex-col gap-4">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">MATCH TEAM SCORES</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">MATCH TEAM SCORES</span>
+                  {room.scoreMultiplier && room.scoreMultiplier > 1 && (
+                    <span className="text-[9px] font-mono font-bold text-[#fe7328] bg-[#fe7328]/20 border border-[#fe7328]/40 px-1.5 py-0.5 rounded animate-pulse uppercase">
+                      ⚡ {room.scoreMultiplier}X DOUBLE
+                    </span>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-[#111113] border border-white/5 p-3 rounded-xl shadow-inner">
                     <span className="text-[9px] font-mono text-[#fbbf24] block font-bold uppercase">TEAM A (1 & 3)</span>
@@ -2627,9 +2800,17 @@ export default function App() {
                   <span className="text-[#fbbf24] text-right">
                     {room.roundWinnerSlot !== null && room.roundWinnerSlot !== -1 
                       ? `${room.players[room.roundWinnerSlot]?.name} Dominoed!` 
-                      : 'Trancado (Lowest sum wins)'}
+                      : room.roundPointsEarned === 0
+                      ? 'Trancado (Tie! Double points next round)'
+                      : 'Trancado (Lowest individual hand wins)'}
                   </span>
                 </div>
+
+                {room.scoreMultiplier && room.scoreMultiplier > 1 && (
+                  <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono font-bold text-center">
+                    ⚡ TIE IN TRANCADO! Zero points awarded. Next round points are DOUBLED ({room.scoreMultiplier}x)!
+                  </div>
+                )}
 
                 <div className="border-t border-white/5 pt-3 flex items-center justify-between font-bold">
                   <span className="text-white/50">Points Earned</span>

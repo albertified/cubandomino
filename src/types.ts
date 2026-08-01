@@ -39,10 +39,13 @@ export interface GameRoom {
     selectingTeam: number;
     chosenIndex: number | null;
     options: Domino[];
+    revealed?: boolean;
   };
   roundWinnerSlot: number | null; // Player slot who won the round (-1 if blocked/trancado)
   roundBlocked: boolean;
   roundPointsEarned: number;
+  scoreMultiplier?: number; // Multiplier for points (e.g. 2x after a tie in trancado)
+  consecutivePasses?: number;
   logs: string[];
   reactions?: Reaction[];
   lastUpdateTime: number;

@@ -131,7 +131,7 @@ export const RulesAndSeoSection: React.FC = () => {
                 <strong>Domino (Dominó):</strong> A player wins the round immediately by placing their last remaining tile. Their partnership earns points equal to the combined total pips remaining in both opponents&apos; hands.
               </li>
               <li>
-                <strong>Blocked Game (La Tranca / Cierre):</strong> When no player can make a legal move on either open end of the board, the game is blocked. Both teams tally the total pips in their unplayed tiles. The team with the <em>lower point sum</em> wins the round and scores the combined points of both opponents.
+                <strong>Blocked Game (La Tranca / Cierre):</strong> When no player can make a legal move on either open end of the board, the game is blocked. The individual player with the lowest hand point value wins the round for their team, earning the combined points of the losing team&apos;s remaining tiles. If opposing players tie with the exact same lowest hand value, 0 points are awarded for that round and the score is <strong>DOUBLED (2x)</strong> for the next round!
               </li>
               <li>
                 <strong>Capicúa Bonus:</strong> If a player wins a round by placing a non-double tile that could legally match <em>either</em> open end of the chain, the play is celebrated as a <em>Capicúa</em>!
@@ -223,7 +223,7 @@ export const RulesAndSeoSection: React.FC = () => {
             },
             {
               q: 'What is a Tranca in Cuban dominoes?',
-              a: 'A Tranca (or Cierre) occurs when the board is blocked and no player holds a playable tile. The team with fewer total pips in their hands wins the round.'
+              a: 'A Tranca (or Cierre) occurs when the board is blocked and no player holds a playable tile. The individual player with the lowest hand point sum wins the round for their team, scoring the losing team\'s remaining points. If opposing players tie for the lowest hand sum, zero points are awarded and the score for the next round is DOUBLED!'
             }
           ].map((faq, idx) => (
             <div key={idx} className="rounded-xl border border-white/10 bg-black/30 overflow-hidden">
