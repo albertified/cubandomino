@@ -434,6 +434,7 @@ function sanitizeRoomForPlayer(room: GameRoom, requesterPlayerId?: string): Game
     if (!player) return null;
 
     const isSelf = Boolean(requesterPlayerId && player.id === requesterPlayerId);
+    const isPlayerHost = room.hostId ? player.id === room.hostId : player.slot === 0;
 
     let hand = player.hand;
     if (!isEndState && !isSelf) {
@@ -450,9 +451,13 @@ function sanitizeRoomForPlayer(room: GameRoom, requesterPlayerId?: string): Game
     return {
       ...player,
       id,
+      isHost: isPlayerHost,
       hand
     };
   });
+
+  const requestingPlayerIsHost = Boolean(requesterPlayerId && room.hostId && requesterPlayerId === room.hostId);
+  const sanitizedHostId = requestingPlayerIsHost ? room.hostId : 'hidden';
 
   let starterSelection = room.starterSelection;
   if (starterSelection && starterSelection.chosenIndex === null) {
@@ -467,6 +472,7 @@ function sanitizeRoomForPlayer(room: GameRoom, requesterPlayerId?: string): Game
 
   return {
     ...room,
+    hostId: sanitizedHostId,
     players: sanitizedPlayers,
     starterSelection
   };

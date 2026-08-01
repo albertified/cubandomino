@@ -958,12 +958,17 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
+      // Generate new ID using crypto random on join
+      const newPlayerId = cryptoRandomId('p');
+      setPlayerId(newPlayerId);
+      localStorage.setItem('cuban_dominoes_player_id', newPlayerId);
+
       const response = await fetch(`/api/rooms/${cleanCode}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           playerName,
-          playerId,
+          playerId: newPlayerId,
         }),
       });
       if (!response.ok) {
@@ -1261,7 +1266,10 @@ export default function App() {
 
   const isHost = useMemo(() => {
     if (!room) return false;
-    if (room.hostId) return room.hostId === playerId;
+    if (playerSlot !== null && room.players[playerSlot]) {
+      return Boolean(room.players[playerSlot]?.isHost);
+    }
+    if (room.hostId && room.hostId !== 'hidden') return room.hostId === playerId;
     return playerSlot === 0;
   }, [room, playerId, playerSlot]);
 
@@ -2094,7 +2102,7 @@ export default function App() {
                             <div className="space-y-2 flex-1 flex flex-col justify-center">
                               <div className="w-12 h-12 rounded-full bg-[#111113] border border-white/5 flex items-center justify-center text-lg mx-auto shadow-md relative">
                                 {player.type === 'bot' ? '🤖' : '👤'}
-                                {(room.hostId ? room.hostId === player.id : idx === 0) && (
+                                {(player.isHost || (room.hostId && room.hostId !== 'hidden' && room.hostId === player.id) || (!room.hostId && idx === 0)) && (
                                   <span className="absolute -top-1 -right-1 bg-[#fe7328] text-[#111113] w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow" title={t.hostBadge}>👑</span>
                                 )}
                               </div>
@@ -2102,7 +2110,7 @@ export default function App() {
                                 <p className="font-bold text-sm text-white flex items-center justify-center gap-1 flex-wrap">
                                   <span>{player.name}</span>
                                   {isMe && <span className="text-[9px] bg-[#fbbf24] text-[#111113] px-1.5 py-0.2 rounded-md font-sans font-bold">YOU</span>}
-                                  {(room.hostId ? room.hostId === player.id : idx === 0) && (
+                                  {(player.isHost || (room.hostId && room.hostId !== 'hidden' && room.hostId === player.id) || (!room.hostId && idx === 0)) && (
                                     <span className="text-[8px] bg-[#fe7328]/20 border border-[#fe7328]/50 text-[#fe7328] px-1.5 py-0.5 rounded font-mono font-bold uppercase">{t.hostBadge}</span>
                                   )}
                                 </p>

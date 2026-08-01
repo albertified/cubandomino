@@ -8,6 +8,7 @@ export interface Player {
   type: PlayerType;
   slot: number; // 0, 1, 2, 3
   hand: Domino[];
+  isHost?: boolean;
 }
 
 export type GameStatus = 'waiting' | 'selecting_starter' | 'playing' | 'round_ended' | 'game_over';

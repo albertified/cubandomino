@@ -14,42 +14,55 @@ const L_SIZES = { sm: 48, md: 72, lg: 108 };
 
 const ROW_LIMIT = 6;
 
-function getRightDirectionDynamic(k: number, _numLeft: number, _numRight: number): string {
-  if (k < ROW_LIMIT) return 'right';
-  if (k < ROW_LIMIT + 2) return 'down';
-  
-  const h_len = ROW_LIMIT * 2; // 12 tiles span across the screen
-  if (k < ROW_LIMIT + 2 + h_len) return 'left';
-  if (k < ROW_LIMIT + 2 + h_len + 2) return 'down';
+function computeBranchDirections(branchTiles: Domino[], isLeftBranch: boolean): string[] {
+  const directions: string[] = [];
+  let currentSegmentIndex = 0;
+  let countInCurrentSegment = 0;
 
-  const kPrime = k - (ROW_LIMIT + 2 + h_len + 2);
-  const cycleLen = h_len + 2; // 14
-  const cycle = Math.floor(kPrime / cycleLen);
-  const offset = kPrime % cycleLen;
+  for (let i = 0; i < branchTiles.length; i++) {
+    const tile = branchTiles[i];
+    const isDouble = tile[0] === tile[1];
 
-  if (offset < h_len) {
-    return cycle % 2 === 0 ? 'right' : 'left';
+    let targetLength: number;
+    if (currentSegmentIndex === 0) {
+      targetLength = ROW_LIMIT;
+    } else if (currentSegmentIndex % 2 === 0) {
+      targetLength = ROW_LIMIT * 2;
+    } else {
+      targetLength = 2;
+    }
+
+    if (countInCurrentSegment >= targetLength) {
+      if (isDouble) {
+        // If the chain needs to bend with a double, extend the chain prior to the bend by one domino
+        countInCurrentSegment++;
+      } else {
+        currentSegmentIndex++;
+        countInCurrentSegment = 1;
+      }
+    } else {
+      countInCurrentSegment++;
+    }
+
+    let dir: string;
+    if (!isLeftBranch) {
+      if (currentSegmentIndex % 2 === 0) {
+        dir = (Math.floor(currentSegmentIndex / 2) % 2 === 0) ? 'right' : 'left';
+      } else {
+        dir = 'down';
+      }
+    } else {
+      if (currentSegmentIndex % 2 === 0) {
+        dir = (Math.floor(currentSegmentIndex / 2) % 2 === 0) ? 'left' : 'right';
+      } else {
+        dir = 'up';
+      }
+    }
+
+    directions.push(dir);
   }
-  return 'down';
-}
 
-function getLeftDirectionDynamic(k: number, _numLeft: number, _numRight: number): string {
-  if (k < ROW_LIMIT) return 'left';
-  if (k < ROW_LIMIT + 2) return 'up';
-  
-  const h_len = ROW_LIMIT * 2; // 12 tiles span across the screen
-  if (k < ROW_LIMIT + 2 + h_len) return 'right';
-  if (k < ROW_LIMIT + 2 + h_len + 2) return 'up';
-
-  const kPrime = k - (ROW_LIMIT + 2 + h_len + 2);
-  const cycleLen = h_len + 2; // 14
-  const cycle = Math.floor(kPrime / cycleLen);
-  const offset = kPrime % cycleLen;
-
-  if (offset < h_len) {
-    return cycle % 2 === 0 ? 'left' : 'right';
-  }
-  return 'up';
+  return directions;
 }
 
 function calculateOffset(
@@ -123,63 +136,64 @@ export function layoutBoard(
     orientation: firstIsDouble ? 'vertical' : 'horizontal',
   };
 
-  const numLeft = firstTileIndex;
-  const numRight = chain.length - 1 - firstTileIndex;
-
   // Right Branch (growing from firstTileIndex + 1 onwards)
-  for (let i = firstTileIndex + 1; i < chain.length; i++) {
-    const prevPos = positions[i - 1];
-    const currTile = chain[i];
+  if (firstTileIndex + 1 < chain.length) {
+    const rightTiles = chain.slice(firstTileIndex + 1);
+    const rightDirs = computeBranchDirections(rightTiles, false);
 
-    const currIsDouble = currTile[0] === currTile[1];
+    for (let k = 0; k < rightTiles.length; k++) {
+      const i = firstTileIndex + 1 + k;
+      const prevPos = positions[i - 1];
+      const currTile = chain[i];
+      const currIsDouble = currTile[0] === currTile[1];
 
-    const k = i - (firstTileIndex + 1);
-    const curr_dir = getRightDirectionDynamic(k, numLeft, numRight);
-    const prev_dir = i === firstTileIndex + 1 ? 'right' : prevPos.dir;
+      const curr_dir = rightDirs[k];
+      const prev_dir = k === 0 ? 'right' : prevPos.dir;
 
-    // Determine orientation of current tile
-    let curr_orient: 'horizontal' | 'vertical';
-    if (currIsDouble) {
-      curr_orient = (curr_dir === 'down' || curr_dir === 'up') ? 'horizontal' : 'vertical';
-    } else {
-      curr_orient = (curr_dir === 'right' || curr_dir === 'left') ? 'horizontal' : 'vertical';
+      let curr_orient: 'horizontal' | 'vertical';
+      if (currIsDouble) {
+        curr_orient = (curr_dir === 'down' || curr_dir === 'up') ? 'horizontal' : 'vertical';
+      } else {
+        curr_orient = (curr_dir === 'right' || curr_dir === 'left') ? 'horizontal' : 'vertical';
+      }
+
+      const { dx, dy } = calculateOffset(prev_dir, curr_dir, prevPos.orientation, curr_orient, S, L);
+
+      const x = prevPos.x + dx;
+      const y = prevPos.y + dy;
+
+      positions[i] = { x, y, angle: 0, isDouble: currIsDouble, dir: curr_dir, orientation: curr_orient };
     }
-
-    // Calculate dx and dy
-    const { dx, dy } = calculateOffset(prev_dir, curr_dir, prevPos.orientation, curr_orient, S, L);
-
-    const x = prevPos.x + dx;
-    const y = prevPos.y + dy;
-
-    positions[i] = { x, y, angle: 0, isDouble: currIsDouble, dir: curr_dir, orientation: curr_orient };
   }
 
   // Left Branch (growing from firstTileIndex - 1 downwards to 0)
-  for (let i = firstTileIndex - 1; i >= 0; i--) {
-    const prevPos = positions[i + 1]; // Reference is tile at i + 1
-    const currTile = chain[i];
+  if (firstTileIndex - 1 >= 0) {
+    const leftTiles = chain.slice(0, firstTileIndex).reverse();
+    const leftDirs = computeBranchDirections(leftTiles, true);
 
-    const currIsDouble = currTile[0] === currTile[1];
+    for (let k = 0; k < leftTiles.length; k++) {
+      const i = firstTileIndex - 1 - k;
+      const prevPos = positions[i + 1];
+      const currTile = chain[i];
+      const currIsDouble = currTile[0] === currTile[1];
 
-    const k = firstTileIndex - 1 - i;
-    const curr_dir = getLeftDirectionDynamic(k, numLeft, numRight);
-    const prev_dir = i === firstTileIndex - 1 ? 'left' : prevPos.dir;
+      const curr_dir = leftDirs[k];
+      const prev_dir = k === 0 ? 'left' : prevPos.dir;
 
-    // Determine orientation of current tile
-    let curr_orient: 'horizontal' | 'vertical';
-    if (currIsDouble) {
-      curr_orient = (curr_dir === 'down' || curr_dir === 'up') ? 'horizontal' : 'vertical';
-    } else {
-      curr_orient = (curr_dir === 'right' || curr_dir === 'left') ? 'horizontal' : 'vertical';
+      let curr_orient: 'horizontal' | 'vertical';
+      if (currIsDouble) {
+        curr_orient = (curr_dir === 'down' || curr_dir === 'up') ? 'horizontal' : 'vertical';
+      } else {
+        curr_orient = (curr_dir === 'right' || curr_dir === 'left') ? 'horizontal' : 'vertical';
+      }
+
+      const { dx, dy } = calculateOffset(prev_dir, curr_dir, prevPos.orientation, curr_orient, S, L);
+
+      const x = prevPos.x + dx;
+      const y = prevPos.y + dy;
+
+      positions[i] = { x, y, angle: 0, isDouble: currIsDouble, dir: curr_dir, orientation: curr_orient };
     }
-
-    // Calculate dx and dy
-    const { dx, dy } = calculateOffset(prev_dir, curr_dir, prevPos.orientation, curr_orient, S, L);
-
-    const x = prevPos.x + dx;
-    const y = prevPos.y + dy;
-
-    positions[i] = { x, y, angle: 0, isDouble: currIsDouble, dir: curr_dir, orientation: curr_orient };
   }
 
   return positions;
