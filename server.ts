@@ -1,11 +1,21 @@
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { GameRoom, Player, Domino, GameStatus, Reaction, RoomListItem } from './src/types';
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+
+// Cryptographically secure random helpers using Node.js crypto module
+function cryptoRandomInt(max: number): number {
+  return crypto.randomInt(0, max);
+}
+
+function cryptoRandomId(prefix: string = 'id'): string {
+  return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
+}
 
 // In-memory database of game rooms
 const rooms = new Map<string, GameRoom>();
@@ -15,7 +25,7 @@ function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude ambiguous characters like I, O, 0, 1
   let code = '';
   for (let i = 0; i < 4; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+    code += chars.charAt(cryptoRandomInt(chars.length));
   }
   return code;
 }
@@ -31,11 +41,11 @@ function generateDoubleNineDeck(): Domino[] {
   return deck;
 }
 
-// Shuffle deck
+// Shuffle deck using Fisher-Yates with crypto random
 function shuffleDeck(deck: Domino[]): Domino[] {
   const d = [...deck];
   for (let i = d.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = cryptoRandomInt(i + 1);
     [d[i], d[j]] = [d[j], d[i]];
   }
   return d;
@@ -121,7 +131,7 @@ function dealRound(room: GameRoom) {
 
   // If startingTeam is not set, default to a random team
   if (room.startingTeam === undefined) {
-    room.startingTeam = Math.floor(Math.random() * 2);
+    room.startingTeam = cryptoRandomInt(2);
   }
 
   // Set initial turn to the lower slot on the starting team
@@ -367,7 +377,7 @@ function scheduleBotTurnIfNeeded(room: GameRoom) {
 
   if (activePlayer.type === 'bot') {
     // Random delay between 2000ms and 5000ms (2 to 5 seconds)
-    const delay = Math.floor(Math.random() * 3000) + 2000;
+    const delay = cryptoRandomInt(3000) + 2000;
 
     const timer = setTimeout(() => {
       botTimers.delete(room.roomCode.toUpperCase());
@@ -526,7 +536,7 @@ app.post('/api/rooms', (req, res) => {
   const roomIsPublic = isPublic !== undefined ? Boolean(isPublic) : true;
 
   const firstPlayer: Player = {
-    id: playerId || `host_${Math.random().toString(36).substr(2, 9)}`,
+    id: playerId || cryptoRandomId('host'),
     name: playerName || 'Player 1',
     type: 'human',
     slot: 0,
@@ -596,7 +606,7 @@ app.post('/api/rooms/:code/join', (req, res) => {
   }
 
   const newPlayer: Player = {
-    id: playerId || `p_${Math.random().toString(36).substr(2, 9)}`,
+    id: playerId || cryptoRandomId('p'),
     name: playerName || `Player ${targetSlot + 1}`,
     type: 'human',
     slot: targetSlot,
@@ -828,7 +838,7 @@ app.post('/api/rooms/:code/start', (req, res) => {
     tileB = deck[idx++];
   }
 
-  const selectingTeam = Math.floor(Math.random() * 2);
+  const selectingTeam = cryptoRandomInt(2);
 
   room.starterSelection = {
     team0Tile: null,
@@ -848,7 +858,7 @@ app.post('/api/rooms/:code/start', (req, res) => {
   );
 
   if (!hasHumanOnSelectingTeam) {
-    const randomIndex = Math.floor(Math.random() * 2);
+    const randomIndex = cryptoRandomInt(2);
     const chosenTile = room.starterSelection.options[randomIndex];
     const otherTile = room.starterSelection.options[1 - randomIndex];
 
@@ -1158,7 +1168,7 @@ app.post('/api/rooms/:code/react', (req, res) => {
   }
 
   const newReaction: Reaction = {
-    id: `react_${Math.random().toString(36).substring(2, 11)}`,
+    id: cryptoRandomId('react'),
     slot: slotNum,
     emoji,
     timestamp: Date.now()

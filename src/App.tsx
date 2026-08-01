@@ -17,6 +17,25 @@ import { ContactAboutPage } from './components/ContactAboutPage';
 import { translations, Language } from './translations';
 import { BoardThemeId, FichaThemeId, BOARD_THEMES, FICHA_THEMES, MATCHED_PRESETS } from './utils/themes';
 
+// Browser Web Crypto random helpers for cryptographically secure randomness
+function cryptoRandom(): number {
+  const array = new Uint32Array(1);
+  window.crypto.getRandomValues(array);
+  return array[0] / 0x100000000;
+}
+
+function cryptoRandomInt(max: number): number {
+  if (max <= 0) return 0;
+  return Math.floor(cryptoRandom() * max);
+}
+
+function cryptoRandomId(prefix: string = 'p'): string {
+  const array = new Uint8Array(6);
+  window.crypto.getRandomValues(array);
+  const hex = Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+  return `${prefix}_${hex}`;
+}
+
 // Browser-based Web Audio API synthesizer for high-fidelity offline sounds
 class DominoSynth {
   private ctx: AudioContext | null = null;
@@ -247,9 +266,9 @@ class DominoSynth {
           }
 
           // 3. Delicate magical sparkle chime occasionally on offbeats
-          if (beatInBar === 2 && Math.random() > 0.4) {
+          if (beatInBar === 2 && cryptoRandom() > 0.4) {
             const chimes = [1046.50, 1174.66, 1318.51, 1567.98, 1760.00]; // C6, D6, E6, G6, A6
-            const chimeFreq = chimes[Math.floor(Math.random() * chimes.length)];
+            const chimeFreq = chimes[cryptoRandomInt(chimes.length)];
 
             const osc = ctx.createOscillator();
             const gainNode = ctx.createGain();
@@ -378,9 +397,9 @@ class DominoSynth {
           }
 
           // 4. Elegant Charanga Flute Melodies
-          if ((stepInBar === 3 || stepInBar === 5) && Math.random() > 0.65) {
+          if ((stepInBar === 3 || stepInBar === 5) && cryptoRandom() > 0.65) {
             const fluteScale = [440.00, 523.25, 587.33, 659.25, 783.99, 880.00, 1046.50];
-            const freq = fluteScale[Math.floor(Math.random() * fluteScale.length)];
+            const freq = fluteScale[cryptoRandomInt(fluteScale.length)];
 
             const osc = ctx.createOscillator();
             const gainNode = ctx.createGain();
@@ -433,7 +452,7 @@ class DominoSynth {
               osc.start(now);
               osc.stop(now + stepDuration * 3.6); // stop AFTER gain is zero
             });
-          } else if (beatInBar === 2 && Math.random() > 0.4) {
+          } else if (beatInBar === 2 && cryptoRandom() > 0.4) {
             // Off-beat quiet chord strum
             chord.forEach(freq => {
               const osc = ctx.createOscillator();
@@ -474,8 +493,8 @@ class DominoSynth {
           }
           
           // 3. Casual, soft lounge melody note occasionally
-          if (Math.random() > 0.4) {
-            const noteFreq = this.melodyNotes[Math.floor(Math.random() * this.melodyNotes.length)];
+          if (cryptoRandom() > 0.4) {
+            const noteFreq = this.melodyNotes[cryptoRandomInt(this.melodyNotes.length)];
             const osc = ctx.createOscillator();
             const gainNode = ctx.createGain();
             const filter = ctx.createBiquadFilter();
@@ -540,7 +559,7 @@ export default function App() {
   const [playerId, setPlayerId] = useState<string>(() => {
     const saved = localStorage.getItem('cuban_dominoes_player_id');
     if (saved) return saved;
-    const generated = 'p_' + Math.random().toString(36).substring(2, 11);
+    const generated = cryptoRandomId('p');
     localStorage.setItem('cuban_dominoes_player_id', generated);
     return generated;
   });
