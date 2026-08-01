@@ -409,6 +409,59 @@ function scheduleBotTurnIfNeeded(room: GameRoom) {
   }
 }
 
+// Extract requesting player ID from query string or body
+function getRequesterPlayerId(req: express.Request): string | undefined {
+  const fromQuery = typeof req.query.playerId === 'string' ? req.query.playerId : undefined;
+  const fromBody = req.body?.playerId || req.body?.requesterId;
+  return fromQuery || fromBody;
+}
+
+// Sanitize room data for client responses to prevent hand-peeking / network inspection cheats
+function sanitizeRoomForPlayer(room: GameRoom, requesterPlayerId?: string): GameRoom {
+  const isEndState = room.status === 'round_ended' || room.status === 'game_over';
+
+  const sanitizedPlayers = room.players.map((player) => {
+    if (!player) return null;
+
+    const isSelf = Boolean(requesterPlayerId && player.id === requesterPlayerId);
+
+    let hand = player.hand;
+    if (!isEndState && !isSelf) {
+      // Mask hands for other players/bots as dummy tiles [-1, -1] while keeping array length intact
+      hand = player.hand.map(() => [-1, -1] as Domino);
+    }
+
+    let id = player.id;
+    if (!isSelf) {
+      // Hide other players' secret IDs so nobody can spoof another player's ID
+      id = 'hidden';
+    }
+
+    return {
+      ...player,
+      id,
+      hand
+    };
+  });
+
+  let starterSelection = room.starterSelection;
+  if (starterSelection && starterSelection.chosenIndex === null) {
+    // Hide facedown starter tiles during selection phase until flipped
+    starterSelection = {
+      ...starterSelection,
+      options: [[-1, -1], [-1, -1]],
+      team0Tile: null,
+      team1Tile: null
+    };
+  }
+
+  return {
+    ...room,
+    players: sanitizedPlayers,
+    starterSelection
+  };
+}
+
 // API Routes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -502,7 +555,7 @@ app.post('/api/rooms', (req, res) => {
   };
 
   rooms.set(code, newRoom);
-  res.json({ room: newRoom, playerSlot: 0 });
+  res.json({ room: sanitizeRoomForPlayer(newRoom, firstPlayer.id), playerSlot: 0 });
 });
 
 // Join Room
@@ -518,7 +571,7 @@ app.post('/api/rooms/:code/join', (req, res) => {
   // Check if player is already in the room
   const existingPlayerIndex = room.players.findIndex(p => p && p.id === playerId);
   if (existingPlayerIndex !== -1) {
-    return res.json({ room, playerSlot: existingPlayerIndex });
+    return res.json({ room: sanitizeRoomForPlayer(room, playerId), playerSlot: existingPlayerIndex });
   }
 
   if (room.status !== 'waiting') {
@@ -554,7 +607,7 @@ app.post('/api/rooms/:code/join', (req, res) => {
   room.logs.push(`👥 ${newPlayer.name} joined the room (Slot ${targetSlot + 1}).`);
   room.lastUpdateTime = Date.now();
 
-  res.json({ room, playerSlot: targetSlot });
+  res.json({ room: sanitizeRoomForPlayer(room, newPlayer.id), playerSlot: targetSlot });
 });
 
 // Update Player Name
@@ -577,7 +630,7 @@ app.post('/api/rooms/:code/update-player', (req, res) => {
     }
   }
 
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, playerId) });
 });
 
 // Get Room State
@@ -595,7 +648,7 @@ app.get('/api/rooms/:code', (req, res) => {
     room.reactions = room.reactions.filter(r => r.timestamp > cutoff);
   }
 
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Add Bot
@@ -638,7 +691,7 @@ app.post('/api/rooms/:code/bot', (req, res) => {
   room.logs.push(`🤖 ${botName} has been added to Slot ${emptySlot + 1}.`);
   room.lastUpdateTime = Date.now();
 
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Remove Player/Bot from slot
@@ -658,7 +711,7 @@ app.post('/api/rooms/:code/remove-slot', (req, res) => {
 
   const targetPlayer = room.players[targetSlot];
   if (!targetPlayer) {
-    return res.json({ room });
+    return res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
   }
 
   // Permission check: host can remove any slot, player can remove themselves (leave)
@@ -693,7 +746,7 @@ app.post('/api/rooms/:code/remove-slot', (req, res) => {
   }
 
   room.lastUpdateTime = Date.now();
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Store active starter reveal timers per room code
@@ -830,7 +883,7 @@ app.post('/api/rooms/:code/start', (req, res) => {
   }
 
   room.lastUpdateTime = Date.now();
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Select Starter Tile
@@ -902,7 +955,7 @@ app.post('/api/rooms/:code/select-starter', (req, res) => {
   scheduleStarterTransition(room, 4500);
 
   room.lastUpdateTime = Date.now();
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Confirm Starter Reveal (Skip waiting timer)
@@ -918,7 +971,7 @@ app.post('/api/rooms/:code/confirm-starter', (req, res) => {
     startMatchAfterReveal(room);
   }
 
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Play Tile
@@ -991,7 +1044,7 @@ app.post('/api/rooms/:code/play', (req, res) => {
   scheduleBotTurnIfNeeded(room);
 
   room.lastUpdateTime = Date.now();
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Pass Turn
@@ -1029,7 +1082,7 @@ app.post('/api/rooms/:code/pass', (req, res) => {
   }
 
   room.lastUpdateTime = Date.now();
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Next Round
@@ -1052,7 +1105,7 @@ app.post('/api/rooms/:code/next-round', (req, res) => {
   scheduleBotTurnIfNeeded(room);
 
   room.lastUpdateTime = Date.now();
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Reset entire game (keep players)
@@ -1082,7 +1135,7 @@ app.post('/api/rooms/:code/reset', (req, res) => {
   }
 
   room.lastUpdateTime = Date.now();
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Send Quick Reaction Emoji
@@ -1122,7 +1175,7 @@ app.post('/api/rooms/:code/react', (req, res) => {
   room.reactions = room.reactions.filter(r => r.timestamp > cutoff);
 
   room.lastUpdateTime = Date.now();
-  res.json({ room });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
 // Clean up stale rooms (older than 4 hours)

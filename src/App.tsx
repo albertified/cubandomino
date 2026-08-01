@@ -830,7 +830,7 @@ export default function App() {
   // Poll for room updates
   const pollRoomState = async (codeToPoll: string) => {
     try {
-      const response = await fetch(`/api/rooms/${codeToPoll}`);
+      const response = await fetch(`/api/rooms/${codeToPoll}?playerId=${encodeURIComponent(playerId)}`);
       if (!response.ok) {
         if (response.status === 404) {
           setError('Room was closed or inactive.');
@@ -1032,7 +1032,7 @@ export default function App() {
   };
 
   const selectTileToPlay = (index: number) => {
-    if (!room || playerSlot === null || room.turn !== playerSlot || room.status !== 'playing') return;
+    if (!room || playerSlot === null || !isMyTurn || room.status !== 'playing') return;
 
     const myPlayer = room.players[playerSlot];
     if (!myPlayer) return;
@@ -1128,6 +1128,8 @@ export default function App() {
     try {
       const response = await fetch(`/api/rooms/${roomCode}/confirm-starter`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
       });
       if (response.ok) {
         const data = await response.json();
@@ -1165,7 +1167,7 @@ export default function App() {
       const response = await fetch(`/api/rooms/${roomCode}/react`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slot: playerSlot, emoji })
+        body: JSON.stringify({ slot: playerSlot, emoji, playerId })
       });
       if (response.ok) {
         const data = await response.json();
@@ -1180,7 +1182,11 @@ export default function App() {
     if (!roomCode) return;
     setLoading(true);
     try {
-      const response = await fetch(`/api/rooms/${roomCode}/next-round`, { method: 'POST' });
+      const response = await fetch(`/api/rooms/${roomCode}/next-round`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
       if (!response.ok) throw new Error('Could not start next round.');
       const data = await response.json();
       setRoom(data.room);
@@ -1198,7 +1204,11 @@ export default function App() {
     if (!roomCode) return;
     if (!confirm('Are you sure you want to reset all scores to 0 and start over?')) return;
     try {
-      const response = await fetch(`/api/rooms/${roomCode}/reset`, { method: 'POST' });
+      const response = await fetch(`/api/rooms/${roomCode}/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
       if (!response.ok) throw new Error('Failed to reset game.');
       const data = await response.json();
       setRoom(data.room);
@@ -1990,7 +2000,7 @@ export default function App() {
                 {room.status === 'playing' ? (
                   <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#006876] border border-[#8debfd]/40 rounded-sm text-xs text-white font-mono font-bold uppercase shadow-sm">
                     <span className="w-2 h-2 rounded-full bg-[#fe7328] animate-pulse" />
-                    {t.turn}: {activePlayerName}
+                    {t.turn}: {room.board.length === 0 ? `Team ${room.startingTeam === 0 ? 'A' : 'B'} (Either Teammate)` : activePlayerName}
                   </span>
                 ) : room.status === 'waiting' ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#200d07] border border-[#83746f]/40 rounded-sm text-xs text-[#eee8da] font-mono font-bold">
@@ -2635,7 +2645,7 @@ export default function App() {
                       )}
                     </div>
 
-                    {room.turn === playerSlot && room.status === 'playing' && myHand.length > 0 && (
+                    {isMyTurn && room.status === 'playing' && myHand.length > 0 && (
                       <div className="mt-4 z-10">
                         {playableIndexes.length === 0 ? (
                           <div className="bg-[#fbbf24]/10 border border-[#fbbf24]/30 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xl">
@@ -2665,7 +2675,11 @@ export default function App() {
                           <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 rounded-xl">
                             <div className="flex items-center gap-2 text-emerald-400 text-xs font-medium font-sans">
                               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                              <span>It's your turn! Select a highlighted tile to place on the board.</span>
+                              <span>
+                                {room.board.length === 0 
+                                  ? "It's your team's turn to start! Either you or your partner can select any tile to place the opening domino." 
+                                  : "It's your turn! Select a highlighted tile to place on the board."}
+                              </span>
                             </div>
                             <button
                               onClick={passTurn}

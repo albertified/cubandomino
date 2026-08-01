@@ -65,32 +65,35 @@ function calculateOffset(
   const currW = currOrient === 'horizontal' ? L : S;
   const currH = currOrient === 'horizontal' ? S : L;
 
-  if (prevDir === currDir) {
-    if (currDir === 'right') {
-      return { dx: prevW / 2 + currW / 2, dy: 0 };
-    }
-    if (currDir === 'left') {
-      return { dx: -(prevW / 2 + currW / 2), dy: 0 };
-    }
-    if (currDir === 'down') {
-      return { dx: 0, dy: prevH / 2 + currH / 2 };
-    }
-    if (currDir === 'up') {
-      return { dx: 0, dy: -(prevH / 2 + currH / 2) };
-    }
-  }
-
-  // Perpendicular turn from horizontal to vertical
-  if (prevDir === 'right' || prevDir === 'left') {
-    const dx = (prevDir === 'right' ? 1 : -1) * (prevW / 2 + currW / 2);
-    const dy = currDir === 'down' ? (currH / 2 - prevH / 2) : -(currH / 2 - prevH / 2);
+  if (currDir === 'right') {
+    const dx = prevW / 2 + currW / 2;
+    let dy = 0;
+    if (prevDir === 'up') dy = -(prevH / 2 - currH / 2);
+    else if (prevDir === 'down') dy = prevH / 2 - currH / 2;
     return { dx, dy };
   }
 
-  // Perpendicular turn from vertical to horizontal
-  if (prevDir === 'up' || prevDir === 'down') {
-    const dy = (prevDir === 'down' ? 1 : -1) * (prevH / 2 + currH / 2);
-    const dx = currDir === 'right' ? (currW / 2 - prevW / 2) : -(currW / 2 - prevW / 2);
+  if (currDir === 'left') {
+    const dx = -(prevW / 2 + currW / 2);
+    let dy = 0;
+    if (prevDir === 'up') dy = -(prevH / 2 - currH / 2);
+    else if (prevDir === 'down') dy = prevH / 2 - currH / 2;
+    return { dx, dy };
+  }
+
+  if (currDir === 'down') {
+    const dy = prevH / 2 + currH / 2;
+    let dx = 0;
+    if (prevDir === 'right') dx = prevW / 2 - currW / 2;
+    else if (prevDir === 'left') dx = -(prevW / 2 - currW / 2);
+    return { dx, dy };
+  }
+
+  if (currDir === 'up') {
+    const dy = -(prevH / 2 + currH / 2);
+    let dx = 0;
+    if (prevDir === 'right') dx = prevW / 2 - currW / 2;
+    else if (prevDir === 'left') dx = -(prevW / 2 - currW / 2);
     return { dx, dy };
   }
 
@@ -132,20 +135,14 @@ export function layoutBoard(
 
     const k = i - (firstTileIndex + 1);
     const curr_dir = getRightDirectionDynamic(k, numLeft, numRight);
-    const next_dir = getRightDirectionDynamic(k + 1, numLeft, numRight);
     const prev_dir = i === firstTileIndex + 1 ? 'right' : prevPos.dir;
 
     // Determine orientation of current tile
     let curr_orient: 'horizontal' | 'vertical';
     if (currIsDouble) {
-      const isAtBend = (curr_dir === 'right' || curr_dir === 'left') && (next_dir === 'down' || next_dir === 'up');
-      if (curr_dir === 'down' || curr_dir === 'up' || isAtBend) {
-        curr_orient = 'horizontal';
-      } else {
-        curr_orient = 'vertical';
-      }
+      curr_orient = (curr_dir === 'down' || curr_dir === 'up') ? 'horizontal' : 'vertical';
     } else {
-      curr_orient = curr_dir === 'right' || curr_dir === 'left' ? 'horizontal' : 'vertical';
+      curr_orient = (curr_dir === 'right' || curr_dir === 'left') ? 'horizontal' : 'vertical';
     }
 
     // Calculate dx and dy
@@ -154,10 +151,7 @@ export function layoutBoard(
     const x = prevPos.x + dx;
     const y = prevPos.y + dy;
 
-    // Angle
-    const angle = 0;
-
-    positions[i] = { x, y, angle, isDouble: currIsDouble, dir: curr_dir, orientation: curr_orient };
+    positions[i] = { x, y, angle: 0, isDouble: currIsDouble, dir: curr_dir, orientation: curr_orient };
   }
 
   // Left Branch (growing from firstTileIndex - 1 downwards to 0)
@@ -169,20 +163,14 @@ export function layoutBoard(
 
     const k = firstTileIndex - 1 - i;
     const curr_dir = getLeftDirectionDynamic(k, numLeft, numRight);
-    const next_dir = getLeftDirectionDynamic(k + 1, numLeft, numRight);
     const prev_dir = i === firstTileIndex - 1 ? 'left' : prevPos.dir;
 
     // Determine orientation of current tile
     let curr_orient: 'horizontal' | 'vertical';
     if (currIsDouble) {
-      const isAtBend = (curr_dir === 'right' || curr_dir === 'left') && (next_dir === 'down' || next_dir === 'up');
-      if (curr_dir === 'down' || curr_dir === 'up' || isAtBend) {
-        curr_orient = 'horizontal';
-      } else {
-        curr_orient = 'vertical';
-      }
+      curr_orient = (curr_dir === 'down' || curr_dir === 'up') ? 'horizontal' : 'vertical';
     } else {
-      curr_orient = curr_dir === 'right' || curr_dir === 'left' ? 'horizontal' : 'vertical';
+      curr_orient = (curr_dir === 'right' || curr_dir === 'left') ? 'horizontal' : 'vertical';
     }
 
     // Calculate dx and dy
@@ -191,10 +179,7 @@ export function layoutBoard(
     const x = prevPos.x + dx;
     const y = prevPos.y + dy;
 
-    // Angle
-    const angle = 0;
-
-    positions[i] = { x, y, angle, isDouble: currIsDouble, dir: curr_dir, orientation: curr_orient };
+    positions[i] = { x, y, angle: 0, isDouble: currIsDouble, dir: curr_dir, orientation: curr_orient };
   }
 
   return positions;
