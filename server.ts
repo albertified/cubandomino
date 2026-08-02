@@ -1,12 +1,42 @@
 import express from 'express';
 import path from 'path';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import { GameRoom, Player, Domino, GameStatus, Reaction, RoomListItem } from './src/types';
 
 const app = express();
 const PORT = 3000;
 
+// Enable trust proxy for reverse proxy environments (e.g. Cloud Run, Nginx)
+app.set('trust proxy', 1);
+
 app.use(express.json());
+
+// Rate Limiters to protect server endpoints from abuse and DDoS
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute window
+  limit: 300, // 300 requests per minute per IP (accommodates 1.2s state polling)
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: false },
+  message: { error: 'Too many requests from this IP, please try again in a minute.' },
+});
+
+const roomCreationLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute window
+  limit: 30, // 30 room creations or joins per minute per IP
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: false },
+  message: { error: 'Too many room creation or join requests, please slow down.' },
+});
+
+// Protect all /api endpoints with the general rate limiter
+app.use('/api', apiLimiter);
+
+// Protect sensitive creation/join endpoints with stricter rate limiting
+app.post('/api/rooms', roomCreationLimiter);
+app.post('/api/rooms/:code/join', roomCreationLimiter);
 
 // Cryptographically secure random helpers using Node.js crypto module
 function cryptoRandomInt(max: number): number {
