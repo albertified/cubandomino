@@ -806,11 +806,19 @@ export default function App() {
 
   // Sync player name changes to localStorage
   const handleSaveName = (name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    localStorage.setItem('cuban_dominoes_player_name', trimmed);
-    setPlayerName(trimmed);
+    const clean = name.replace(/<[^>]*>?/gm, '').replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim();
+    if (!clean) return;
+    const finalName = clean.slice(0, 24);
+    localStorage.setItem('cuban_dominoes_player_name', finalName);
+    setPlayerName(finalName);
     setHasName(true);
+    if (roomCode && playerId) {
+      fetch(`/api/rooms/${roomCode}/update-player`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, newName: finalName })
+      }).catch(console.error);
+    }
   };
 
   // Fetch Public Rooms

@@ -12,6 +12,75 @@ app.set('trust proxy', 1);
 
 app.use(express.json());
 
+// Input Sanitization Helpers
+function sanitizeString(input: unknown, maxLength = 30, defaultValue = ''): string {
+  if (typeof input !== 'string') return defaultValue;
+  let clean = input
+    .replace(/<[^>]*>?/gm, '') // Strip HTML tags
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Strip control chars
+    .trim();
+
+  if (clean.length > maxLength) {
+    clean = clean.substring(0, maxLength).trim();
+  }
+  return clean || defaultValue;
+}
+
+function sanitizeRoomCode(input: unknown): string {
+  if (typeof input !== 'string') return '';
+  return input.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+}
+
+function sanitizeId(input: unknown, defaultValue = ''): string {
+  if (typeof input !== 'string') return defaultValue;
+  return input.replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 64) || defaultValue;
+}
+
+function sanitizeInt(input: unknown, min: number, max: number, defaultValue: number): number {
+  if (input === undefined || input === null) return defaultValue;
+  const num = parseInt(String(input), 10);
+  if (isNaN(num)) return defaultValue;
+  return Math.min(Math.max(num, min), max);
+}
+
+function sanitizeEmoji(input: unknown, defaultValue = '👍'): string {
+  if (typeof input !== 'string') return defaultValue;
+  const clean = input.replace(/<[^>]*>?/gm, '').replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim();
+  return clean.slice(0, 10) || defaultValue;
+}
+
+// Global recursive sanitization helper for request payloads
+function sanitizeRequestData(val: unknown): unknown {
+  if (typeof val === 'string') {
+    return val.replace(/<[^>]*>?/gm, '').replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim();
+  }
+  if (Array.isArray(val)) {
+    return val.map(sanitizeRequestData);
+  }
+  if (val !== null && typeof val === 'object') {
+    const cleanObj: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+      cleanObj[k] = sanitizeRequestData(v);
+    }
+    return cleanObj;
+  }
+  return val;
+}
+
+// Global Sanitization Middleware to clean incoming body, params, and query
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object') {
+    req.body = sanitizeRequestData(req.body);
+  }
+  if (req.params && typeof req.params === 'object') {
+    req.params = sanitizeRequestData(req.params) as typeof req.params;
+  }
+  if (req.query && typeof req.query === 'object') {
+    req.query = sanitizeRequestData(req.query) as typeof req.query;
+  }
+  next();
+});
+
 // Rate Limiters to protect server endpoints from abuse and DDoS
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute window
@@ -449,11 +518,13 @@ function scheduleBotTurnIfNeeded(room: GameRoom) {
   }
 }
 
-// Extract requesting player ID from query string or body
+// Extract requesting player ID from query string or body safely
 function getRequesterPlayerId(req: express.Request): string | undefined {
   const fromQuery = typeof req.query.playerId === 'string' ? req.query.playerId : undefined;
+  const fromHeader = typeof req.headers['x-player-id'] === 'string' ? req.headers['x-player-id'] : undefined;
   const fromBody = req.body?.playerId || req.body?.requesterId;
-  return fromQuery || fromBody;
+  const rawId = fromQuery || fromHeader || fromBody;
+  return rawId ? sanitizeId(rawId) : undefined;
 }
 
 // Sanitize room data for client responses to prevent hand-peeking / network inspection cheats
@@ -560,7 +631,7 @@ app.get('/api/public-rooms', (req, res) => {
 
 // Create Room
 app.post('/api/rooms', (req, res) => {
-  const { targetScore, playerName, playerId, isPublic } = req.body;
+  const { targetScore, playerName, playerId, isPublic } = req.body || {};
   
   let code = generateRoomCode();
   // Ensure unique code
@@ -568,12 +639,14 @@ app.post('/api/rooms', (req, res) => {
     code = generateRoomCode();
   }
 
-  const limitScore = Number(targetScore) || 150;
+  const limitScore = sanitizeInt(targetScore, 50, 500, 150);
   const roomIsPublic = isPublic !== undefined ? Boolean(isPublic) : true;
+  const cleanName = sanitizeString(playerName, 24, 'Player 1');
+  const cleanId = sanitizeId(playerId, cryptoRandomId('host'));
 
   const firstPlayer: Player = {
-    id: playerId || cryptoRandomId('host'),
-    name: playerName || 'Player 1',
+    id: cleanId,
+    name: cleanName,
     type: 'human',
     slot: 0,
     hand: []
@@ -606,18 +679,21 @@ app.post('/api/rooms', (req, res) => {
 
 // Join Room
 app.post('/api/rooms/:code/join', (req, res) => {
-  const { code } = req.params;
-  const { playerName, playerId, slot } = req.body;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const { playerName, playerId, slot } = req.body || {};
+  const cleanName = sanitizeString(playerName, 24, 'Player');
+  const cleanId = sanitizeId(playerId, cryptoRandomId('p'));
+
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
   }
 
   // Check if player is already in the room
-  const existingPlayerIndex = room.players.findIndex(p => p && p.id === playerId);
+  const existingPlayerIndex = room.players.findIndex(p => p && p.id === cleanId);
   if (existingPlayerIndex !== -1) {
-    return res.json({ room: sanitizeRoomForPlayer(room, playerId), playerSlot: existingPlayerIndex });
+    return res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: existingPlayerIndex });
   }
 
   if (room.status !== 'waiting') {
@@ -626,9 +702,10 @@ app.post('/api/rooms/:code/join', (req, res) => {
 
   // Find slot
   let targetSlot = -1;
-  if (slot !== undefined && Number(slot) >= 0 && Number(slot) < 4) {
-    if (!room.players[Number(slot)]) {
-      targetSlot = Number(slot);
+  if (slot !== undefined) {
+    const parsedSlot = sanitizeInt(slot, 0, 3, -1);
+    if (parsedSlot >= 0 && parsedSlot < 4 && !room.players[parsedSlot]) {
+      targetSlot = parsedSlot;
     }
   }
 
@@ -642,8 +719,8 @@ app.post('/api/rooms/:code/join', (req, res) => {
   }
 
   const newPlayer: Player = {
-    id: playerId || cryptoRandomId('p'),
-    name: playerName || `Player ${targetSlot + 1}`,
+    id: cleanId,
+    name: cleanName || `Player ${targetSlot + 1}`,
     type: 'human',
     slot: targetSlot,
     hand: []
@@ -658,31 +735,34 @@ app.post('/api/rooms/:code/join', (req, res) => {
 
 // Update Player Name
 app.post('/api/rooms/:code/update-player', (req, res) => {
-  const { code } = req.params;
-  const { playerId, newName } = req.body;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const { playerId, newName } = req.body || {};
+  const cleanId = sanitizeId(playerId);
+  const cleanName = sanitizeString(newName, 24, '');
+
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
   }
 
-  const player = room.players.find(p => p && p.id === playerId);
-  if (player && newName && typeof newName === 'string' && newName.trim().length > 0) {
+  const player = room.players.find(p => p && p.id === cleanId);
+  if (player && cleanName.length > 0) {
     const oldName = player.name;
-    player.name = newName.trim();
+    player.name = cleanName;
     if (oldName !== player.name) {
       room.logs.push(`✏️ ${oldName} changed profile name to ${player.name}.`);
       room.lastUpdateTime = Date.now();
     }
   }
 
-  res.json({ room: sanitizeRoomForPlayer(room, playerId) });
+  res.json({ room: sanitizeRoomForPlayer(room, cleanId) });
 });
 
 // Get Room State
 app.get('/api/rooms/:code', (req, res) => {
-  const { code } = req.params;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
@@ -699,9 +779,9 @@ app.get('/api/rooms/:code', (req, res) => {
 
 // Add Bot
 app.post('/api/rooms/:code/bot', (req, res) => {
-  const { code } = req.params;
-  const { requesterId } = req.body;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const requesterId = sanitizeId(req.body?.requesterId);
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
@@ -742,15 +822,15 @@ app.post('/api/rooms/:code/bot', (req, res) => {
 
 // Remove Player/Bot from slot
 app.post('/api/rooms/:code/remove-slot', (req, res) => {
-  const { code } = req.params;
-  const { slot, requesterId } = req.body;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const targetSlot = sanitizeInt(req.body?.slot, 0, 3, -1);
+  const requesterId = sanitizeId(req.body?.requesterId);
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
   }
 
-  const targetSlot = Number(slot);
   if (targetSlot < 0 || targetSlot > 3) {
     return res.status(400).json({ error: 'Invalid slot' });
   }
@@ -777,7 +857,7 @@ app.post('/api/rooms/:code/remove-slot', (req, res) => {
 
   if (remainingHumans.length === 0) {
     // Automatically close lobbies that have zero human players
-    rooms.delete(code.toUpperCase());
+    rooms.delete(code);
     return res.json({ message: 'Room closed (no human players remaining)', roomClosed: true });
   }
 
@@ -831,9 +911,9 @@ function scheduleStarterTransition(room: GameRoom, delayMs: number = 4500) {
 
 // Start Game
 app.post('/api/rooms/:code/start', (req, res) => {
-  const { code } = req.params;
-  const { requesterId } = req.body;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const requesterId = sanitizeId(req.body?.requesterId);
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
@@ -934,9 +1014,10 @@ app.post('/api/rooms/:code/start', (req, res) => {
 
 // Select Starter Tile
 app.post('/api/rooms/:code/select-starter', (req, res) => {
-  const { code } = req.params;
-  const { playerId, optionIndex } = req.body;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const playerId = sanitizeId(req.body?.playerId);
+  const optionIndex = sanitizeInt(req.body?.optionIndex, 0, 1, -1);
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
@@ -950,8 +1031,7 @@ app.post('/api/rooms/:code/select-starter', (req, res) => {
     return res.status(400).json({ error: 'Starter tile has already been chosen' });
   }
 
-  const idx = Number(optionIndex);
-  if (idx !== 0 && idx !== 1) {
+  if (optionIndex !== 0 && optionIndex !== 1) {
     return res.status(400).json({ error: 'Invalid option index' });
   }
 
@@ -966,10 +1046,10 @@ app.post('/api/rooms/:code/select-starter', (req, res) => {
     return res.status(400).json({ error: `Only Team ${selectingTeam === 0 ? 'A' : 'B'} can make this choice` });
   }
 
-  const chosenTile = room.starterSelection.options[idx];
-  const otherTile = room.starterSelection.options[1 - idx];
+  const chosenTile = room.starterSelection.options[optionIndex];
+  const otherTile = room.starterSelection.options[1 - optionIndex];
 
-  room.starterSelection.chosenIndex = idx;
+  room.starterSelection.chosenIndex = optionIndex;
 
   let team0Tile: Domino;
   let team1Tile: Domino;
@@ -992,7 +1072,7 @@ app.post('/api/rooms/:code/select-starter', (req, res) => {
   const startingTeam = sum0 < sum1 ? 0 : 1;
   room.startingTeam = startingTeam;
 
-  room.logs.push(`🔮 ${player.name} chose Tile ${idx + 1}.`);
+  room.logs.push(`🔮 ${player.name} chose Tile ${optionIndex + 1}.`);
   room.logs.push(`🎴 Team A gets [${team0Tile[0]}|${team0Tile[1]}] (Value: ${sum0}).`);
   room.logs.push(`🎴 Team B gets [${team1Tile[0]}|${team1Tile[1]}] (Value: ${sum1}).`);
   room.logs.push(`🎲 Team ${startingTeam === 0 ? 'A' : 'B'} has the lower value tile and starts the match!`);
@@ -1006,8 +1086,8 @@ app.post('/api/rooms/:code/select-starter', (req, res) => {
 
 // Confirm Starter Reveal (Skip waiting timer)
 app.post('/api/rooms/:code/confirm-starter', (req, res) => {
-  const { code } = req.params;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
@@ -1022,9 +1102,13 @@ app.post('/api/rooms/:code/confirm-starter', (req, res) => {
 
 // Play Tile
 app.post('/api/rooms/:code/play', (req, res) => {
-  const { code } = req.params;
-  const { playerId, tileIndex, side } = req.body;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const playerId = sanitizeId(req.body?.playerId);
+  const parsedTileIndex = sanitizeInt(req.body?.tileIndex, 0, 55, -1);
+  const rawSide = req.body?.side;
+  const side = rawSide === 'left' ? 'left' : rawSide === 'right' ? 'right' : '';
+
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
@@ -1059,7 +1143,6 @@ app.post('/api/rooms/:code/play', (req, res) => {
   }
 
   const activePlayer = room.players[room.turn]!;
-  const parsedTileIndex = Number(tileIndex);
   if (parsedTileIndex < 0 || parsedTileIndex >= activePlayer.hand.length) {
     return res.status(400).json({ error: 'Invalid tile index' });
   }
@@ -1084,7 +1167,7 @@ app.post('/api/rooms/:code/play', (req, res) => {
   }
 
   // Execute human play
-  executePlayTile(room, room.turn, parsedTileIndex, side);
+  executePlayTile(room, room.turn, parsedTileIndex, side as 'left' | 'right');
 
   // Run subsequent bots and skips
   scheduleBotTurnIfNeeded(room);
@@ -1095,9 +1178,9 @@ app.post('/api/rooms/:code/play', (req, res) => {
 
 // Pass Turn
 app.post('/api/rooms/:code/pass', (req, res) => {
-  const { code } = req.params;
-  const { playerId } = req.body;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const playerId = sanitizeId(req.body?.playerId);
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
@@ -1133,8 +1216,8 @@ app.post('/api/rooms/:code/pass', (req, res) => {
 
 // Next Round
 app.post('/api/rooms/:code/next-round', (req, res) => {
-  const { code } = req.params;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
@@ -1156,8 +1239,8 @@ app.post('/api/rooms/:code/next-round', (req, res) => {
 
 // Reset entire game (keep players)
 app.post('/api/rooms/:code/reset', (req, res) => {
-  const { code } = req.params;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
@@ -1186,20 +1269,20 @@ app.post('/api/rooms/:code/reset', (req, res) => {
 
 // Send Quick Reaction Emoji
 app.post('/api/rooms/:code/react', (req, res) => {
-  const { code } = req.params;
-  const { slot, emoji } = req.body;
-  const room = rooms.get(code.toUpperCase());
+  const code = sanitizeRoomCode(req.params.code);
+  const slotNum = sanitizeInt(req.body?.slot, 0, 3, -1);
+  const emoji = sanitizeEmoji(req.body?.emoji);
+  const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
   }
 
-  const slotNum = Number(slot);
-  if (isNaN(slotNum) || slotNum < 0 || slotNum > 3) {
+  if (slotNum < 0 || slotNum > 3) {
     return res.status(400).json({ error: 'Invalid player slot' });
   }
 
-  if (!emoji || typeof emoji !== 'string') {
+  if (!emoji) {
     return res.status(400).json({ error: 'Invalid emoji' });
   }
 
