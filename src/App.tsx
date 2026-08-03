@@ -635,12 +635,24 @@ export default function App() {
   const [settingsFichaTheme, setSettingsFichaTheme] = useState<FichaThemeId>('havana');
   const [settingsSavedToast, setSettingsSavedToast] = useState<boolean>(false);
 
+  // Domino Tile Hand Scale State
+  const [handTileScale, setHandTileScale] = useState<number>(() => {
+    const stored = localStorage.getItem('cuban_dominoes_hand_scale');
+    if (stored) {
+      const parsed = parseFloat(stored);
+      if (!isNaN(parsed) && parsed >= 0.7 && parsed <= 2.0) return parsed;
+    }
+    return 1;
+  });
+  const [settingsHandScale, setSettingsHandScale] = useState<number>(1);
+
   // Helper to open settings with current values
   const openSettingsModal = () => {
     setSettingsName(playerName);
     setSettingsBoardTheme(boardTheme);
     setSettingsFichaTheme(fichaTheme);
     setSettingsDragAndDrop(dragAndDropEnabled);
+    setSettingsHandScale(handTileScale);
     setShowSettings(true);
   };
 
@@ -663,6 +675,9 @@ export default function App() {
 
     setDragAndDropEnabled(settingsDragAndDrop);
     localStorage.setItem('cuban_dominoes_drag_drop', String(settingsDragAndDrop));
+
+    setHandTileScale(settingsHandScale);
+    localStorage.setItem('cuban_dominoes_hand_scale', String(settingsHandScale));
 
     // If currently in a room, send update to server
     if (roomCode && playerId) {
@@ -2809,9 +2824,9 @@ export default function App() {
 
                   {/* USER HAND CONTROL */}
                   <div className="mt-4 bg-[#1c1c1f] border border-white/5 p-5 rounded-2xl relative overflow-hidden shadow-2xl">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-3 z-10">
+                    <div className="relative z-30 flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-3">
                       <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-mono font-bold tracking-wider text-white/40 uppercase">
                             Player Hand Grid
                           </span>
@@ -2836,17 +2851,64 @@ export default function App() {
                           >
                             <span>🖐️ Drag to Organize: {dragAndDropEnabled ? 'ON' : 'OFF'}</span>
                           </button>
+
+                          {/* Hand Domino Tile Scale Control */}
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-[#111113]/95 border border-white/10 text-white/70 shadow-xl relative z-30">
+                            <span className="text-white/40">🔍 Tile Size:</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = Math.max(0.75, Math.round((handTileScale - 0.15) * 100) / 100);
+                                setHandTileScale(next);
+                                localStorage.setItem('cuban_dominoes_hand_scale', String(next));
+                              }}
+                              disabled={handTileScale <= 0.75}
+                              className="w-4 h-4 flex items-center justify-center rounded bg-white/10 hover:bg-white/20 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-white font-bold"
+                              title="Make hand dominoes smaller"
+                            >
+                              -
+                            </button>
+                            <span className="min-w-[34px] text-center font-bold text-[#8debfd]">
+                              {Math.round(handTileScale * 100)}%
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = Math.min(1.75, Math.round((handTileScale + 0.15) * 100) / 100);
+                                setHandTileScale(next);
+                                localStorage.setItem('cuban_dominoes_hand_scale', String(next));
+                              }}
+                              disabled={handTileScale >= 1.75}
+                              className="w-4 h-4 flex items-center justify-center rounded bg-white/10 hover:bg-white/20 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-white font-bold"
+                              title="Make hand dominoes bigger"
+                            >
+                              +
+                            </button>
+                            {handTileScale !== 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setHandTileScale(1);
+                                  localStorage.setItem('cuban_dominoes_hand_scale', '1');
+                                }}
+                                className="text-[9px] underline text-white/40 hover:text-white ml-0.5 cursor-pointer lowercase"
+                                title="Reset to 100% normal size"
+                              >
+                                reset
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <span className="text-[10px] text-white/40 mt-1 font-sans">
-                          💡 {dragAndDropEnabled ? 'Drag tiles onto each other to reorder your fichas. Click tile or press Space to play.' : 'Click tile to select and play. Keyboard: A/D/Arrows move, Space/F flips.'}
+                          💡 {dragAndDropEnabled ? 'Drag tiles onto each other to reorder your fichas. Click tile or press Space to play.' : 'Click tile to select and play. Keyboard: A/D/Arrows move, Space/F flips.'} Adjust size with 🔍 controls.
                         </span>
                       </div>
                       
                       <div className="flex flex-wrap items-center gap-4 self-start lg:self-auto">
                         {/* Quick Reaction Emojis Panel */}
-                        <div className="flex items-center gap-1 bg-[#111113]/60 border border-white/5 rounded-full px-2 py-0.5 shadow-inner relative overflow-hidden">
+                        <div className="flex items-center gap-1 bg-[#111113]/80 border border-white/10 rounded-full px-2 py-0.5 shadow-xl relative z-30">
                           {reactionCooldown > 0 && (
-                            <div className="absolute inset-0 bg-black/85 flex items-center justify-center font-mono text-[10px] font-bold text-[#fbbf24] z-10 select-none animate-pulse">
+                            <div className="absolute inset-0 bg-black/85 flex items-center justify-center font-mono text-[10px] font-bold text-[#fbbf24] z-10 select-none animate-pulse rounded-full">
                               ⏳ COOLDOWN: {reactionCooldown}s
                             </div>
                           )}
@@ -2890,7 +2952,11 @@ export default function App() {
                         setLocalHand(newHand);
                         audio.playClack();
                       }}
-                      className="flex flex-wrap justify-center items-center gap-2 md:gap-3.5 py-1 z-10"
+                      style={{
+                        paddingTop: handTileScale > 1 ? `${Math.round((handTileScale - 1) * 35)}px` : undefined,
+                        paddingBottom: handTileScale > 1 ? `${Math.round((handTileScale - 1) * 25)}px` : undefined,
+                      }}
+                      className="flex flex-wrap justify-center items-center gap-2 md:gap-3.5 py-1 relative z-10"
                     >
                       {localHand.length === 0 ? (
                         <p className="text-xs text-white/30 font-sans italic py-4">
@@ -2903,6 +2969,9 @@ export default function App() {
                           const isSelected = selectedLocalIdx === idx || selectedTileIndex === serverIdx;
                           const stableKey = `tile-${item.val[0]}-${item.val[1]}-${item.originalIndex}`;
                           const isItemDragging = draggingTileKey === stableKey;
+
+                          const extraX = handTileScale > 1 ? (handTileScale - 1) * 26 : (handTileScale < 1 ? (handTileScale - 1) * 18 : 0);
+                          const extraY = handTileScale > 1 ? (handTileScale - 1) * 36 : 0;
 
                           return (
                             <Reorder.Item
@@ -2922,76 +2991,89 @@ export default function App() {
                               onPointerDown={() => {
                                 setSelectedLocalIdx(idx);
                               }}
+                              style={{
+                                marginLeft: extraX !== 0 ? `${extraX}px` : undefined,
+                                marginRight: extraX !== 0 ? `${extraX}px` : undefined,
+                                marginBottom: extraY > 0 ? `${extraY}px` : undefined,
+                              }}
                               className={`relative group flex flex-col items-center pb-8 ${
                                 dragAndDropEnabled ? 'cursor-grab active:cursor-grabbing select-none' : ''
                               }`}
                             >
-                              <DominoTile
-                                val1={item.val[0]}
-                                val2={item.val[1]}
-                                playable={true}
-                                disableHover={draggingTileKey !== null}
-                                highlighted={isSelected}
-                                fichaTheme={fichaTheme}
-                                onClick={() => {
-                                  setSelectedLocalIdx(idx);
-                                  // Trigger play logic if active turn and playable
-                                  if (isMyTurn && isPlayable) {
-                                    selectTileToPlay(serverIdx);
-                                  }
+                              <div
+                                style={{
+                                  transform: handTileScale !== 1 ? `scale(${handTileScale})` : undefined,
+                                  transformOrigin: 'top center',
                                 }}
-                                size="lg"
-                                className={`transition-all duration-300 ${
-                                  isPlayable && isMyTurn
-                                    ? 'ring-2 ring-emerald-400 shadow-emerald-500/20'
-                                    : ''
-                                } ${
-                                  isItemDragging ? 'shadow-2xl' : ''
-                                }`}
-                              />
-                              
-                              {/* Control buttons absolutely positioned under each tile within padding area */}
-                              <div 
-                                className={`absolute bottom-0 left-1/2 -translate-x-1/2 z-20 flex items-center justify-between gap-1 px-1 py-0.5 rounded-md bg-[#111113]/95 border border-white/10 transition-all duration-200 shadow-xl w-[95px] ${
-                                  isSelected 
-                                    ? 'opacity-100 scale-100 pointer-events-auto' 
-                                    : 'opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto'
-                                }`}
+                                className="relative flex flex-col items-center transition-transform duration-200"
                               >
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    moveLeft(idx);
+                                <DominoTile
+                                  val1={item.val[0]}
+                                  val2={item.val[1]}
+                                  playable={true}
+                                  disableHover={draggingTileKey !== null}
+                                  highlighted={isSelected}
+                                  fichaTheme={fichaTheme}
+                                  onClick={() => {
+                                    setSelectedLocalIdx(idx);
+                                    // Trigger play logic if active turn and playable
+                                    if (isMyTurn && isPlayable) {
+                                      selectTileToPlay(serverIdx);
+                                    }
                                   }}
-                                  disabled={idx === 0}
-                                  className="p-1 rounded bg-[#1c1c1f] hover:bg-[#fbbf24] text-white/60 hover:text-slate-950 disabled:opacity-20 transition-all cursor-pointer"
-                                  title="Move Left (ArrowLeft / A)"
+                                  size="lg"
+                                  className={`transition-all duration-300 ${
+                                    isPlayable && isMyTurn
+                                      ? 'ring-2 ring-emerald-400 shadow-emerald-500/20'
+                                      : ''
+                                  } ${
+                                    isItemDragging ? 'shadow-2xl' : ''
+                                  }`}
+                                />
+                                
+                                {/* Control buttons absolutely positioned under each tile within padding area */}
+                                <div 
+                                  className={`absolute bottom-[-32px] left-1/2 -translate-x-1/2 z-20 flex items-center justify-between gap-1 px-1 py-0.5 rounded-md bg-[#111113]/95 border border-white/10 transition-all duration-200 shadow-xl w-[95px] ${
+                                    isSelected 
+                                      ? 'opacity-100 scale-100 pointer-events-auto' 
+                                      : 'opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto'
+                                  }`}
                                 >
-                                  <ArrowLeft className="w-2.5 h-2.5" />
-                                </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      moveLeft(idx);
+                                    }}
+                                    disabled={idx === 0}
+                                    className="p-1 rounded bg-[#1c1c1f] hover:bg-[#fbbf24] text-white/60 hover:text-slate-950 disabled:opacity-20 transition-all cursor-pointer"
+                                    title="Move Left (ArrowLeft / A)"
+                                  >
+                                    <ArrowLeft className="w-2.5 h-2.5" />
+                                  </button>
 
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    flipTile(idx);
-                                  }}
-                                  className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-[#1c1c1f] hover:bg-[#fbbf24] text-white/60 hover:text-slate-950 transition-all cursor-pointer"
-                                  title="Flip Tile (Space / F)"
-                                >
-                                  FLIP
-                                </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      flipTile(idx);
+                                    }}
+                                    className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-[#1c1c1f] hover:bg-[#fbbf24] text-white/60 hover:text-slate-950 transition-all cursor-pointer"
+                                    title="Flip Tile (Space / F)"
+                                  >
+                                    FLIP
+                                  </button>
 
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    moveRight(idx);
-                                  }}
-                                  disabled={idx === localHand.length - 1}
-                                  className="p-1 rounded bg-[#1c1c1f] hover:bg-[#fbbf24] text-white/60 hover:text-slate-950 disabled:opacity-20 transition-all cursor-pointer"
-                                  title="Move Right (ArrowRight / D)"
-                                >
-                                  <ArrowRight className="w-2.5 h-2.5" />
-                                </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      moveRight(idx);
+                                    }}
+                                    disabled={idx === localHand.length - 1}
+                                    className="p-1 rounded bg-[#1c1c1f] hover:bg-[#fbbf24] text-white/60 hover:text-slate-950 disabled:opacity-20 transition-all cursor-pointer"
+                                    title="Move Right (ArrowRight / D)"
+                                  >
+                                    <ArrowRight className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
                               </div>
                             </Reorder.Item>
                           );
@@ -3000,7 +3082,7 @@ export default function App() {
                     </Reorder.Group>
 
                     {isMyTurn && room.status === 'playing' && myHand.length > 0 && (
-                      <div className="mt-4 z-10">
+                      <div className="relative z-20 mt-4">
                         {playableIndexes.length === 0 ? (
                           <div className="bg-[#fbbf24]/10 border border-[#fbbf24]/30 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xl">
                             <div className="flex items-center gap-3 text-left">
@@ -3677,6 +3759,57 @@ export default function App() {
                     >
                       {settingsDragAndDrop ? 'Enabled' : 'Disabled'}
                     </button>
+                  </div>
+
+                  {/* Tile Size / Hand Scaling Setting */}
+                  <div className="p-3.5 bg-[#111113] border border-white/10 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-mono text-white font-bold block">Hand Domino Tile Scale</span>
+                        <span className="text-[10px] font-sans text-white/50 block">Enlarge or shrink tiles in your hand grid</span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-[#8debfd] bg-[#006876]/30 px-2 py-0.5 rounded border border-[#006876]">
+                        {Math.round(settingsHandScale * 100)}%
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-mono text-white/40">75%</span>
+                      <input
+                        type="range"
+                        min={0.75}
+                        max={1.65}
+                        step={0.05}
+                        value={settingsHandScale}
+                        onChange={(e) => setSettingsHandScale(parseFloat(e.target.value))}
+                        className="flex-1 accent-[#8debfd] cursor-pointer h-1.5 bg-white/10 rounded-lg"
+                      />
+                      <span className="text-[10px] font-mono text-white/40">165%</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/5">
+                      <div className="flex gap-1.5 flex-wrap">
+                        {[
+                          { label: '85% Compact', val: 0.85 },
+                          { label: '100% Normal', val: 1.0 },
+                          { label: '125% Large', val: 1.25 },
+                          { label: '150% Extra Large', val: 1.50 },
+                        ].map((preset) => (
+                          <button
+                            key={preset.val}
+                            type="button"
+                            onClick={() => setSettingsHandScale(preset.val)}
+                            className={`px-2 py-1 rounded text-[10px] font-mono font-bold transition-all cursor-pointer border ${
+                              Math.abs(settingsHandScale - preset.val) < 0.02
+                                ? 'bg-[#006876] border-[#8debfd] text-white shadow-sm'
+                                : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
