@@ -275,7 +275,23 @@ function handleRoundWin(room: GameRoom, winnerSlot: number) {
   room.startingTeam = winningTeam; // Winner team gets starting rights on subsequent round!
   room.scoreMultiplier = 1; // Reset multiplier after a win!
 
-  room.logs.push(`🎉 DOMINO! ${winner.name} played their last tile!`);
+  // Crown & Domino Streak logic
+  room.lastDominoWinnerSlot = winnerSlot;
+  for (let i = 0; i < 4; i++) {
+    const p = room.players[i];
+    if (p) {
+      if (i === winnerSlot) {
+        p.isLastDominoWinner = true;
+        p.dominoStreak = (p.dominoStreak || 0) + 1;
+      } else {
+        p.isLastDominoWinner = false;
+        p.dominoStreak = 0; // Streak removed if they didn't domino!
+      }
+    }
+  }
+
+  const winnerStreak = winner.dominoStreak || 1;
+  room.logs.push(`🎉 DOMINO! ${winner.name} played their last tile! 👑${winnerStreak > 1 ? ` (🔥 ${winnerStreak}x DOMINO STREAK!)` : ''}`);
   if (multiplier > 1) {
     room.logs.push(`🏆 Team ${winningTeam === 0 ? 'A (Slots 1 & 3)' : 'B (Slots 2 & 4)'} wins the round and earns ${totalPoints} points (${losingPoints} pts × ${multiplier}x DOUBLE bonus from previous tie)!`);
   } else {
@@ -292,6 +308,17 @@ function handleRoundWin(room: GameRoom, winnerSlot: number) {
 // Handle blocked game
 function handleTrancado(room: GameRoom) {
   // Blocked! Nobody can make a valid move.
+  // Crown & Domino Streak logic for blocked game:
+  // "Dont add a crown to anyone if it the game got blocked... Remove this streak if they don't dominoe, lose the round, or block the game"
+  room.lastDominoWinnerSlot = null;
+  for (let i = 0; i < 4; i++) {
+    const p = room.players[i];
+    if (p) {
+      p.isLastDominoWinner = false;
+      p.dominoStreak = 0;
+    }
+  }
+
   // Evaluate individual hands to see who wins.
   const sums = [0, 0, 0, 0];
   for (let i = 0; i < 4; i++) {
@@ -1260,12 +1287,15 @@ app.post('/api/rooms/:code/reset', (req, res) => {
   room.roundWinnerSlot = null;
   room.roundBlocked = false;
   room.roundPointsEarned = 0;
+  room.lastDominoWinnerSlot = null;
   room.logs = [`Match reset by host. Waiting to start.`];
 
-  // Clear hands
+  // Clear hands & streaks
   for (let i = 0; i < 4; i++) {
     if (room.players[i]) {
       room.players[i]!.hand = [];
+      room.players[i]!.isLastDominoWinner = false;
+      room.players[i]!.dominoStreak = 0;
     }
   }
 

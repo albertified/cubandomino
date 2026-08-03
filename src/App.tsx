@@ -605,6 +605,10 @@ export default function App() {
   const [draggedHandIdx, setDraggedHandIdx] = useState<number | null>(null);
   const [isDraggingTile, setIsDraggingTile] = useState<boolean>(false);
   const [draggingTileKey, setDraggingTileKey] = useState<string | null>(null);
+  const wasDraggingRef = useRef<boolean>(false);
+  const lastDragEndTimeRef = useRef<number>(0);
+  const handContainerRef = useRef<HTMLDivElement>(null);
+  const reorderGroupRef = useRef<HTMLDivElement>(null);
 
   const [nowMs, setNowMs] = useState<number>(Date.now());
   useEffect(() => {
@@ -2292,14 +2296,17 @@ export default function App() {
                       const teamNum = idx % 2;
                       const isMe = player && player.id === playerId;
                       
+                      const isCrown = Boolean(player?.isLastDominoWinner || (room.lastDominoWinnerSlot !== null && room.lastDominoWinnerSlot === idx));
                       return (
                         <div 
                           key={idx}
                           className={`border rounded-xl p-5 relative flex flex-col items-center text-center justify-between h-48 transition-all ${
                             player 
-                              ? isMe 
-                                ? 'bg-[#fbbf24]/5 border-[#fbbf24]/30 shadow-inner' 
-                                : 'bg-[#1c1c1f] border-white/5'
+                              ? isCrown
+                                ? 'bg-gradient-to-b from-amber-400/25 via-yellow-400/15 to-amber-500/25 border-amber-400 text-amber-200 shadow-lg shadow-amber-500/20'
+                                : isMe 
+                                  ? 'bg-[#fbbf24]/5 border-[#fbbf24]/30 shadow-inner' 
+                                  : 'bg-[#1c1c1f] border-white/5'
                               : 'bg-transparent border-dashed border-white/10'
                           }`}
                         >
@@ -2322,7 +2329,10 @@ export default function App() {
                               <div className="w-12 h-12 rounded-full bg-[#111113] border border-white/5 flex items-center justify-center text-lg mx-auto shadow-md relative">
                                 {player.type === 'bot' ? '🤖' : '👤'}
                                 {(player.isHost || (room.hostId && room.hostId !== 'hidden' && room.hostId === player.id) || (!room.hostId && idx === 0)) && (
-                                  <span className="absolute -top-1 -right-1 bg-[#fe7328] text-[#111113] w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow" title={t.hostBadge}>👑</span>
+                                  <span className="absolute -top-1 -right-1 bg-[#fe7328] text-[#111113] w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow" title={t.hostBadge}>⭐</span>
+                                )}
+                                {(player.isLastDominoWinner || room.lastDominoWinnerSlot === idx) && (
+                                  <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center shadow" title="Last Domino Winner 👑">👑</span>
                                 )}
                               </div>
                               <div>
@@ -2331,6 +2341,11 @@ export default function App() {
                                   {isMe && <span className="text-[9px] bg-[#fbbf24] text-[#111113] px-1.5 py-0.2 rounded-md font-sans font-bold">YOU</span>}
                                   {(player.isHost || (room.hostId && room.hostId !== 'hidden' && room.hostId === player.id) || (!room.hostId && idx === 0)) && (
                                     <span className="text-[8px] bg-[#fe7328]/20 border border-[#fe7328]/50 text-[#fe7328] px-1.5 py-0.5 rounded font-mono font-bold uppercase">{t.hostBadge}</span>
+                                  )}
+                                  {player.dominoStreak && player.dominoStreak > 1 && (
+                                    <span className="text-[9px] bg-gradient-to-r from-amber-500 to-red-500 text-white px-1.5 py-0.2 rounded-full font-mono font-black animate-pulse" title={`${player.dominoStreak} Domino Wins in a Row!`}>
+                                      🔥 {player.dominoStreak}x
+                                    </span>
                                   )}
                                 </p>
                                 <p className="text-[10px] text-white/40 mt-0.5 font-sans">
@@ -2453,6 +2468,9 @@ export default function App() {
                         idx % 2 === room.starterSelection.selectingTeam
                       ));
 
+                      const isCrown = Boolean(player?.isLastDominoWinner || (room.lastDominoWinnerSlot !== null && room.lastDominoWinnerSlot === idx));
+                      const streak = player?.dominoStreak || 0;
+
                       const tVal = room.turnTimer || 0;
                       const elapsed = (isTurn && tVal > 0 && room.turnStartedAt) ? Math.max(0, (nowMs - room.turnStartedAt) / 1000) : 0;
                       const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
@@ -2461,15 +2479,25 @@ export default function App() {
                       return (
                         <div className="absolute top-2 left-1/2 transform -translate-x-1/2 z-30 flex flex-col items-center">
                           <div className={`px-4 py-2 rounded-xl border flex items-center gap-2 transition-all shadow-xl ${
-                            isTurn 
-                              ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] scale-105 shadow-[#fbbf24]/10' 
-                              : 'bg-[#1c1c1f] border-white/5 text-white/90'
+                            isCrown && isTurn
+                              ? 'bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 border-amber-200 text-slate-950 scale-105 shadow-xl shadow-amber-400/30 ring-2 ring-amber-300 font-bold'
+                              : isCrown
+                                ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 border-amber-300 text-slate-950 shadow-lg shadow-amber-500/20 font-bold'
+                                : isTurn 
+                                  ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] scale-105 shadow-[#fbbf24]/10' 
+                                  : 'bg-[#1c1c1f] border-white/5 text-white/90'
                           }`}>
+                            {isCrown && (
+                              <span className="text-sm cursor-help" title="Last Domino Winner 👑">👑</span>
+                            )}
+                            {streak > 1 && (
+                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>
+                            )}
                             <span className="text-xs font-bold leading-none flex items-center gap-1 truncate max-w-[120px]">
                               {player?.name || `Seat ${idx + 1}`}
-                              <span className={`text-[8px] px-1.5 py-0.2 rounded-md uppercase font-sans font-black ${isTurn ? 'bg-[#111113] text-[#fbbf24]' : 'bg-teal-500 text-slate-950'}`}>PARTNER</span>
+                              <span className={`text-[8px] px-1.5 py-0.2 rounded-md uppercase font-sans font-black ${(isTurn || isCrown) ? 'bg-[#111113] text-[#fbbf24]' : 'bg-teal-500 text-slate-950'}`}>PARTNER</span>
                             </span>
-                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${isTurn ? 'bg-[#111113]/10 text-[#111113]/80' : 'bg-[#111113] text-white/40'}`}>
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90 font-bold' : 'bg-[#111113] text-white/40'}`}>
                               🀰 {player?.hand.length || 0}
                             </span>
                             {isTurn && tVal > 0 && (
@@ -2499,6 +2527,9 @@ export default function App() {
                         idx % 2 === room.starterSelection.selectingTeam
                       ));
 
+                      const isCrown = Boolean(player?.isLastDominoWinner || (room.lastDominoWinnerSlot !== null && room.lastDominoWinnerSlot === idx));
+                      const streak = player?.dominoStreak || 0;
+
                       const tVal = room.turnTimer || 0;
                       const elapsed = (isTurn && tVal > 0 && room.turnStartedAt) ? Math.max(0, (nowMs - room.turnStartedAt) / 1000) : 0;
                       const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
@@ -2507,15 +2538,23 @@ export default function App() {
                       return (
                         <div className="absolute left-2 top-1/2 transform -translate-y-1/2 z-30 flex flex-col items-center">
                           <div className={`px-4 py-2 rounded-xl border flex flex-col items-center gap-1 transition-all shadow-xl ${
-                            isTurn 
-                              ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] scale-105 shadow-[#fbbf24]/10' 
-                              : 'bg-[#1c1c1f] border-white/5 text-white/90'
+                            isCrown && isTurn
+                              ? 'bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 border-amber-200 text-slate-950 scale-105 shadow-xl shadow-amber-400/30 ring-2 ring-amber-300 font-bold'
+                              : isCrown
+                                ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 border-amber-300 text-slate-950 shadow-lg shadow-amber-500/20 font-bold'
+                                : isTurn 
+                                  ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] scale-105 shadow-[#fbbf24]/10' 
+                                  : 'bg-[#1c1c1f] border-white/5 text-white/90'
                           }`}>
-                            <span className="text-xs font-bold leading-none truncate max-w-[110px]">
-                              {player?.name || `Seat ${idx + 1}`}
-                            </span>
                             <div className="flex items-center gap-1">
-                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${isTurn ? 'bg-[#111113]/10 text-[#111113]/80' : 'bg-[#111113] text-white/40'}`}>
+                              {isCrown && <span className="text-sm cursor-help" title="Last Domino Winner 👑">👑</span>}
+                              {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
+                              <span className="text-xs font-bold leading-none truncate max-w-[110px]">
+                                {player?.name || `Seat ${idx + 1}`}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90 font-bold' : 'bg-[#111113] text-white/40'}`}>
                                 🀰 {player?.hand.length || 0}
                               </span>
                               {isTurn && tVal > 0 && (
@@ -2546,6 +2585,9 @@ export default function App() {
                         idx % 2 === room.starterSelection.selectingTeam
                       ));
 
+                      const isCrown = Boolean(player?.isLastDominoWinner || (room.lastDominoWinnerSlot !== null && room.lastDominoWinnerSlot === idx));
+                      const streak = player?.dominoStreak || 0;
+
                       const tVal = room.turnTimer || 0;
                       const elapsed = (isTurn && tVal > 0 && room.turnStartedAt) ? Math.max(0, (nowMs - room.turnStartedAt) / 1000) : 0;
                       const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
@@ -2554,15 +2596,23 @@ export default function App() {
                       return (
                         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 z-30 flex flex-col items-center">
                           <div className={`px-4 py-2 rounded-xl border flex flex-col items-center gap-1 transition-all shadow-xl ${
-                            isTurn 
-                              ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] scale-105 shadow-[#fbbf24]/10' 
-                              : 'bg-[#1c1c1f] border-white/5 text-white/90'
+                            isCrown && isTurn
+                              ? 'bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 border-amber-200 text-slate-950 scale-105 shadow-xl shadow-amber-400/30 ring-2 ring-amber-300 font-bold'
+                              : isCrown
+                                ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 border-amber-300 text-slate-950 shadow-lg shadow-amber-500/20 font-bold'
+                                : isTurn 
+                                  ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] scale-105 shadow-[#fbbf24]/10' 
+                                  : 'bg-[#1c1c1f] border-white/5 text-white/90'
                           }`}>
-                            <span className="text-xs font-bold leading-none truncate max-w-[110px]">
-                              {player?.name || `Seat ${idx + 1}`}
-                            </span>
                             <div className="flex items-center gap-1">
-                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${isTurn ? 'bg-[#111113]/10 text-[#111113]/80' : 'bg-[#111113] text-white/40'}`}>
+                              {isCrown && <span className="text-sm cursor-help" title="Last Domino Winner 👑">👑</span>}
+                              {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
+                              <span className="text-xs font-bold leading-none truncate max-w-[110px]">
+                                {player?.name || `Seat ${idx + 1}`}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90 font-bold' : 'bg-[#111113] text-white/40'}`}>
                                 🀰 {player?.hand.length || 0}
                               </span>
                               {isTurn && tVal > 0 && (
@@ -2784,6 +2834,10 @@ export default function App() {
                       const isTurn = isMyTurn || (room.status === 'selecting_starter' && room.starterSelection && (
                         playerSlot % 2 === room.starterSelection.selectingTeam
                       ));
+                      const myPlayer = room.players[playerSlot];
+                      const isCrown = Boolean(myPlayer?.isLastDominoWinner || (room.lastDominoWinnerSlot !== null && room.lastDominoWinnerSlot === playerSlot));
+                      const streak = myPlayer?.dominoStreak || 0;
+
                       const tVal = room.turnTimer || 0;
                       const elapsed = (isTurn && tVal > 0 && room.turnStartedAt) ? Math.max(0, (nowMs - room.turnStartedAt) / 1000) : 0;
                       const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
@@ -2792,18 +2846,24 @@ export default function App() {
                       return (
                         <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 z-30 flex flex-col items-center">
                           <div className={`px-4 py-2 rounded-xl border flex items-center gap-2 transition-all shadow-xl ${
-                            isTurn
-                              ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] ring-4 ring-[#fbbf24]/30 scale-105' 
-                              : 'bg-[#1c1c1f] border-white/5 text-white/90'
+                            isCrown && isTurn
+                              ? 'bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 border-amber-200 text-slate-950 ring-4 ring-amber-300/40 scale-105 font-bold'
+                              : isCrown
+                                ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 border-amber-300 text-slate-950 shadow-lg shadow-amber-500/20 font-bold'
+                                : isTurn
+                                  ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] ring-4 ring-[#fbbf24]/30 scale-105' 
+                                  : 'bg-[#1c1c1f] border-white/5 text-white/90'
                           }`}>
+                            {isCrown && <span className="text-sm cursor-help" title="Last Domino Winner 👑">👑</span>}
+                            {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
                             <div className="flex flex-col">
                               <span className="text-xs font-bold leading-none flex items-center gap-1">
-                                👤 {room.players[playerSlot]?.name}
-                                <span className={`text-[8px] px-1 py-0.2 rounded-md uppercase font-sans font-black ${isTurn ? 'bg-[#111113] text-[#fbbf24]' : 'bg-[#fbbf24] text-[#111113]'}`}>YOU</span>
+                                👤 {myPlayer?.name}
+                                <span className={`text-[8px] px-1 py-0.2 rounded-md uppercase font-sans font-black ${(isTurn || isCrown) ? 'bg-[#111113] text-[#fbbf24]' : 'bg-[#fbbf24] text-[#111113]'}`}>YOU</span>
                               </span>
                             </div>
-                            <span className={`text-[10px] font-mono font-bold rounded-md px-1.5 py-0.5 ${isTurn ? 'bg-[#111113]/10 text-[#111113]/80' : 'bg-[#111113] text-white/40'}`}>
-                              🀰 {room.players[playerSlot]?.hand.length || 0}
+                            <span className={`text-[10px] font-mono font-bold rounded-md px-1.5 py-0.5 ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90' : 'bg-[#111113] text-white/40'}`}>
+                              🀰 {myPlayer?.hand.length || 0}
                             </span>
                             {isTurn && tVal > 0 && (
                               <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${remSec <= 5 ? 'bg-red-600 text-white animate-pulse' : remSec <= 10 ? 'bg-amber-500 text-slate-950' : 'bg-[#111113] text-[#fbbf24]'}`}>
@@ -2830,6 +2890,16 @@ export default function App() {
                           <span className="text-xs font-mono font-bold tracking-wider text-white/40 uppercase">
                             Player Hand Grid
                           </span>
+                          {Boolean(room.players[playerSlot]?.isLastDominoWinner || room.lastDominoWinnerSlot === playerSlot) && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 shadow-md" title="Last Domino Winner 👑">
+                              👑 DOMINO WINNER
+                            </span>
+                          )}
+                          {Boolean(room.players[playerSlot]?.dominoStreak && (room.players[playerSlot]?.dominoStreak || 0) > 1) && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow-md animate-pulse" title={`${room.players[playerSlot]?.dominoStreak} Domino Wins in a Row!`}>
+                              🔥 {room.players[playerSlot]?.dominoStreak}x STREAK
+                            </span>
+                          )}
                           {isMyTurn && (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] bg-[#fbbf24] text-[#111113] font-bold uppercase tracking-wider animate-pulse">
                               ACTIVE TURN
@@ -2938,68 +3008,82 @@ export default function App() {
                       </div>
                     </div>
 
-                    <Reorder.Group
-                      axis="x"
-                      values={localHand}
-                      onReorder={(newHand) => {
-                        if (selectedLocalIdx !== null && localHand[selectedLocalIdx]) {
-                          const selectedOriginalIdx = localHand[selectedLocalIdx].originalIndex;
-                          const newIdx = newHand.findIndex(item => item.originalIndex === selectedOriginalIdx);
-                          if (newIdx !== -1) {
-                            setSelectedLocalIdx(newIdx);
+                    <div ref={handContainerRef} className="relative w-full overflow-hidden flex justify-center py-1">
+                      <Reorder.Group
+                        ref={reorderGroupRef}
+                        axis="x"
+                        values={localHand}
+                        onReorder={(newHand) => {
+                          wasDraggingRef.current = true;
+                          lastDragEndTimeRef.current = Date.now();
+                          if (selectedLocalIdx !== null && localHand[selectedLocalIdx]) {
+                            const selectedOriginalIdx = localHand[selectedLocalIdx].originalIndex;
+                            const newIdx = newHand.findIndex(item => item.originalIndex === selectedOriginalIdx);
+                            if (newIdx !== -1) {
+                              setSelectedLocalIdx(newIdx);
+                            }
                           }
-                        }
-                        setLocalHand(newHand);
-                        audio.playClack();
-                      }}
-                      style={{
-                        paddingTop: handTileScale > 1 ? `${Math.round((handTileScale - 1) * 35)}px` : undefined,
-                        paddingBottom: handTileScale > 1 ? `${Math.round((handTileScale - 1) * 25)}px` : undefined,
-                      }}
-                      className="flex flex-wrap justify-center items-center gap-2 md:gap-3.5 py-1 relative z-10"
-                    >
-                      {localHand.length === 0 ? (
-                        <p className="text-xs text-white/30 font-sans italic py-4">
-                          No tiles in hand. Round complete.
-                        </p>
-                      ) : (
-                        localHand.map((item, idx) => {
-                          const serverIdx = item.originalIndex;
-                          const isPlayable = playableIndexes.includes(serverIdx);
-                          const isSelected = selectedLocalIdx === idx || selectedTileIndex === serverIdx;
-                          const stableKey = `tile-${item.val[0]}-${item.val[1]}-${item.originalIndex}`;
-                          const isItemDragging = draggingTileKey === stableKey;
+                          setLocalHand(newHand);
+                          audio.playClack();
+                        }}
+                        style={{
+                          paddingTop: handTileScale > 1 ? `${Math.round((handTileScale - 1) * 35)}px` : undefined,
+                          paddingBottom: handTileScale > 1 ? `${Math.round((handTileScale - 1) * 25)}px` : undefined,
+                        }}
+                        className="flex flex-wrap justify-center items-center gap-2 md:gap-3.5 py-1 relative z-10 touch-none select-none"
+                      >
+                        {localHand.length === 0 ? (
+                          <p className="text-xs text-white/30 font-sans italic py-4">
+                            No tiles in hand. Round complete.
+                          </p>
+                        ) : (
+                          localHand.map((item, idx) => {
+                            const serverIdx = item.originalIndex;
+                            const isPlayable = playableIndexes.includes(serverIdx);
+                            const isSelected = selectedLocalIdx === idx || selectedTileIndex === serverIdx;
+                            const stableKey = `tile-${item.val[0]}-${item.val[1]}-${item.originalIndex}`;
+                            const isItemDragging = draggingTileKey === stableKey;
 
-                          const extraX = handTileScale > 1 ? (handTileScale - 1) * 26 : (handTileScale < 1 ? (handTileScale - 1) * 18 : 0);
-                          const extraY = handTileScale > 1 ? (handTileScale - 1) * 36 : 0;
+                            const extraX = handTileScale > 1 ? (handTileScale - 1) * 26 : (handTileScale < 1 ? (handTileScale - 1) * 18 : 0);
+                            const extraY = handTileScale > 1 ? (handTileScale - 1) * 36 : 0;
 
-                          return (
-                            <Reorder.Item
-                              key={stableKey}
-                              value={item}
-                              dragListener={dragAndDropEnabled}
-                              onDragStart={() => {
-                                setDraggingTileKey(stableKey);
-                              }}
-                              onDragEnd={() => {
-                                setDraggingTileKey(null);
-                              }}
-                              animate={{
-                                zIndex: isItemDragging ? 50 : 1,
-                              }}
-                              transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                              onPointerDown={() => {
-                                setSelectedLocalIdx(idx);
-                              }}
-                              style={{
-                                marginLeft: extraX !== 0 ? `${extraX}px` : undefined,
-                                marginRight: extraX !== 0 ? `${extraX}px` : undefined,
-                                marginBottom: extraY > 0 ? `${extraY}px` : undefined,
-                              }}
-                              className={`relative group flex flex-col items-center pb-8 ${
-                                dragAndDropEnabled ? 'cursor-grab active:cursor-grabbing select-none' : ''
-                              }`}
-                            >
+                            return (
+                              <Reorder.Item
+                                key={stableKey}
+                                value={item}
+                                axis="x"
+                                drag="x"
+                                dragConstraints={reorderGroupRef}
+                                dragElastic={0}
+                                dragMomentum={false}
+                                dragListener={dragAndDropEnabled}
+                                onDragStart={() => {
+                                  setDraggingTileKey(stableKey);
+                                  wasDraggingRef.current = true;
+                                }}
+                                onDragEnd={() => {
+                                  setDraggingTileKey(null);
+                                  lastDragEndTimeRef.current = Date.now();
+                                  setTimeout(() => {
+                                    wasDraggingRef.current = false;
+                                  }, 400);
+                                }}
+                                animate={{
+                                  zIndex: isItemDragging ? 50 : 1,
+                                }}
+                                transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                                onPointerDown={() => {
+                                  setSelectedLocalIdx(idx);
+                                }}
+                                style={{
+                                  marginLeft: extraX !== 0 ? `${extraX}px` : undefined,
+                                  marginRight: extraX !== 0 ? `${extraX}px` : undefined,
+                                  marginBottom: extraY > 0 ? `${extraY}px` : undefined,
+                                }}
+                                className={`relative group flex flex-col items-center pb-8 touch-none select-none ${
+                                  dragAndDropEnabled ? 'cursor-grab active:cursor-grabbing' : ''
+                                }`}
+                              >
                               <div
                                 style={{
                                   transform: handTileScale !== 1 ? `scale(${handTileScale})` : undefined,
@@ -3015,7 +3099,17 @@ export default function App() {
                                   highlighted={isSelected}
                                   fichaTheme={fichaTheme}
                                   onClick={() => {
+                                    const now = Date.now();
+                                    const wasDragged = wasDraggingRef.current || (now - lastDragEndTimeRef.current < 400);
+                                    wasDraggingRef.current = false;
+
                                     setSelectedLocalIdx(idx);
+
+                                    if (wasDragged) {
+                                      // User was drag-organizing tiles! Do not place or play domino accidentally.
+                                      return;
+                                    }
+
                                     // Trigger play logic if active turn and playable
                                     if (isMyTurn && isPlayable) {
                                       selectTileToPlay(serverIdx);
@@ -3080,6 +3174,7 @@ export default function App() {
                         })
                       )}
                     </Reorder.Group>
+                  </div>
 
                     {isMyTurn && room.status === 'playing' && myHand.length > 0 && (
                       <div className="relative z-20 mt-4">
@@ -3262,7 +3357,7 @@ export default function App() {
             >
               <div className="space-y-2">
                 <div className="w-16 h-16 rounded-full bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-3xl flex items-center justify-center mx-auto text-[#fbbf24]">
-                  <Crown className="w-8 h-8 text-[#fbbf24] animate-bounce" />
+                  <Crown className="w-8 h-8 text-[#fbbf24]" />
                 </div>
                 <h3 className="text-xl font-display font-extrabold tracking-tight text-white uppercase">
                   {room.roundBlocked ? 'Round Blocked (Trancado)' : 'Round Won!'}
@@ -3273,13 +3368,24 @@ export default function App() {
               <div className="bg-[#111113] p-4 rounded-xl border border-white/5 text-sm space-y-4 text-left">
                 <div className="flex items-center justify-between font-bold">
                   <span className="text-white/50">Outcome</span>
-                  <span className="text-[#fbbf24] text-right">
-                    {room.roundWinnerSlot !== null && room.roundWinnerSlot !== -1 
-                      ? `${room.players[room.roundWinnerSlot]?.name} Dominoed!` 
-                      : room.roundPointsEarned === 0
-                      ? 'Trancado (Tie! Double points next round)'
-                      : 'Trancado (Lowest individual hand wins)'}
-                  </span>
+                  <div className="text-[#fbbf24] text-right flex flex-col items-end gap-1">
+                    {room.roundWinnerSlot !== null && room.roundWinnerSlot !== -1 ? (
+                      <>
+                        <span className="flex items-center gap-1 font-extrabold text-amber-300">
+                          👑 {room.players[room.roundWinnerSlot]?.name} Dominoed!
+                        </span>
+                        {room.players[room.roundWinnerSlot]?.dominoStreak && (room.players[room.roundWinnerSlot]?.dominoStreak || 0) > 1 && (
+                          <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-red-500 text-white text-[10px] font-mono font-black shadow animate-pulse">
+                            🔥 {room.players[room.roundWinnerSlot]?.dominoStreak}x Domino Streak!
+                          </span>
+                        )}
+                      </>
+                    ) : room.roundPointsEarned === 0 ? (
+                      'Trancado (Tie! Double points next round)'
+                    ) : (
+                      'Trancado (Lowest individual hand wins)'
+                    )}
+                  </div>
                 </div>
 
                 {room.scoreMultiplier && room.scoreMultiplier > 1 && (

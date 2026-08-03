@@ -9,6 +9,8 @@ export interface Player {
   slot: number; // 0, 1, 2, 3
   hand: Domino[];
   isHost?: boolean;
+  dominoStreak?: number; // Number of consecutive domino wins in a row
+  isLastDominoWinner?: boolean; // True if this player played their last tile in the previous domino win
 }
 
 export type GameStatus = 'waiting' | 'selecting_starter' | 'playing' | 'round_ended' | 'game_over';
@@ -48,6 +50,7 @@ export interface GameRoom {
   roundBlocked: boolean;
   roundPointsEarned: number;
   scoreMultiplier?: number; // Multiplier for points (e.g. 2x after a tie in trancado)
+  lastDominoWinnerSlot?: number | null; // Slot of player who dominoed last (null if trancado or reset)
   consecutivePasses?: number;
   logs: string[];
   reactions?: Reaction[];
