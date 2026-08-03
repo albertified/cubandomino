@@ -290,7 +290,7 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
             );
           })}
 
-          {/* Left / Right Placement Overlays (Only visible when user has pending action) */}
+          {/* Left / Right Placement Overlays (Only visible when user clicked a playable card) */}
           {pendingPlaySideSelection && onPlaySelect && (
             <>
               {/* Left choice button */}

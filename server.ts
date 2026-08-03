@@ -237,6 +237,7 @@ function dealRound(room: GameRoom) {
   const initialStarter = room.startingTeam === 0 ? 0 : 1;
   room.starterSlot = initialStarter;
   room.turn = initialStarter;
+  room.turnStartedAt = Date.now();
 
   room.logs.push(`--- A New Round Begins ---`);
   room.logs.push(`🔀 Shuffled deck. 10 dominoes dealt per player. 15 dominoes out of play.`);
@@ -367,6 +368,7 @@ function handleTrancado(room: GameRoom) {
 // Advance turn counter-clockwise (0 -> 3 -> 2 -> 1 -> 0)
 function advanceTurn(room: GameRoom) {
   room.turn = (room.turn + 3) % 4;
+  room.turnStartedAt = Date.now();
 
   // Handle empty player slots if any (auto-pass for empty slots)
   let emptySkips = 0;
@@ -613,6 +615,7 @@ app.get('/api/public-rooms', (req, res) => {
         humanCount: humanCount,
         status: room.status,
         targetScore: room.targetScore,
+        turnTimer: room.turnTimer !== undefined ? room.turnTimer : 60,
         isPublic: true,
         lastUpdateTime: room.lastUpdateTime,
       });
@@ -631,7 +634,7 @@ app.get('/api/public-rooms', (req, res) => {
 
 // Create Room
 app.post('/api/rooms', (req, res) => {
-  const { targetScore, playerName, playerId, isPublic } = req.body || {};
+  const { targetScore, turnTimer, playerName, playerId, isPublic } = req.body || {};
   
   let code = generateRoomCode();
   // Ensure unique code
@@ -640,6 +643,7 @@ app.post('/api/rooms', (req, res) => {
   }
 
   const limitScore = sanitizeInt(targetScore, 50, 500, 150);
+  const limitTurnTimer = (turnTimer === 0 || turnTimer === '0') ? 0 : sanitizeInt(turnTimer, 30, 120, 60);
   const roomIsPublic = isPublic !== undefined ? Boolean(isPublic) : true;
   const cleanName = sanitizeString(playerName, 24, 'Player 1');
   const cleanId = sanitizeId(playerId, cryptoRandomId('host'));
@@ -656,6 +660,7 @@ app.post('/api/rooms', (req, res) => {
     roomCode: code,
     status: 'waiting',
     targetScore: limitScore,
+    turnTimer: limitTurnTimer,
     isPublic: roomIsPublic,
     hostName: firstPlayer.name,
     hostId: firstPlayer.id,
@@ -668,7 +673,7 @@ app.post('/api/rooms', (req, res) => {
     roundWinnerSlot: null,
     roundBlocked: false,
     roundPointsEarned: 0,
-    logs: [`Room ${code} created. Waiting for players to join.`],
+    logs: [`Room ${code} created. Target: ${limitScore} PTS | Turn Timer: ${limitTurnTimer > 0 ? `${limitTurnTimer}s` : 'OFF'}. Waiting for players to join.`],
     reactions: [],
     lastUpdateTime: Date.now()
   };
@@ -944,6 +949,7 @@ app.post('/api/rooms/:code/start', (req, res) => {
   room.status = 'selecting_starter';
   room.scores = [0, 0];
   room.scoreMultiplier = 1;
+  room.turnStartedAt = Date.now();
   
   // Pick two random dominoes with different sums to prevent any ties in value
   const deck = shuffleDeck(generateDoubleNineDeck());
@@ -1316,6 +1322,77 @@ setInterval(() => {
     }
   }
 }, 30 * 60 * 1000);
+
+// Turn Timer Enforcer Loop (runs every 1 second)
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, room] of rooms.entries()) {
+    if (!room.turnTimer || room.turnTimer <= 0) continue;
+    if (!room.turnStartedAt) continue;
+
+    const elapsedSec = (now - room.turnStartedAt) / 1000;
+    if (elapsedSec < room.turnTimer) continue;
+
+    // Time expired!
+    if (room.status === 'selecting_starter' && room.starterSelection && room.starterSelection.chosenIndex === null) {
+      const optionIndex = 0;
+      const chosenTile = room.starterSelection.options[optionIndex];
+      const otherTile = room.starterSelection.options[1 - optionIndex];
+
+      room.starterSelection.chosenIndex = optionIndex;
+      const selectingTeam = room.starterSelection.selectingTeam;
+
+      if (selectingTeam === 0) {
+        room.starterSelection.team0Tile = chosenTile;
+        room.starterSelection.team1Tile = otherTile;
+      } else {
+        room.starterSelection.team1Tile = chosenTile;
+        room.starterSelection.team0Tile = otherTile;
+      }
+
+      const sum0 = room.starterSelection.team0Tile[0] + room.starterSelection.team0Tile[1];
+      const sum1 = room.starterSelection.team1Tile[0] + room.starterSelection.team1Tile[1];
+      const startingTeam = sum0 < sum1 ? 0 : 1;
+      room.startingTeam = startingTeam;
+
+      room.logs.push(`⏰ Selection time limit expired (${room.turnTimer}s)! Tile 1 was automatically selected.`);
+      room.logs.push(`🎴 Team A gets [${room.starterSelection.team0Tile[0]}|${room.starterSelection.team0Tile[1]}] (Value: ${sum0}).`);
+      room.logs.push(`🎴 Team B gets [${room.starterSelection.team1Tile[0]}|${room.starterSelection.team1Tile[1]}] (Value: ${sum1}).`);
+      room.logs.push(`🎲 Team ${startingTeam === 0 ? 'A' : 'B'} starts the match!`);
+
+      scheduleStarterTransition(room, 4500);
+      room.turnStartedAt = Date.now();
+      room.lastUpdateTime = Date.now();
+    } else if (room.status === 'playing') {
+      const activeSlot = room.turn;
+      const activePlayer = room.players[activeSlot];
+      if (!activePlayer) {
+        advanceTurn(room);
+        scheduleBotTurnIfNeeded(room);
+        continue;
+      }
+
+      const botMove = getBotMove(activePlayer.hand, room.board);
+      if (botMove) {
+        const tile = activePlayer.hand[botMove.tileIndex];
+        room.logs.push(`⏰ ${activePlayer.name}'s turn timer expired (${room.turnTimer}s)! Auto-played tile [${tile[0]}|${tile[1]}].`);
+        executePlayTile(room, activeSlot, botMove.tileIndex, botMove.side);
+      } else {
+        room.consecutivePasses = (room.consecutivePasses || 0) + 1;
+        room.logs.push(`⏰ ${activePlayer.name}'s turn timer expired (${room.turnTimer}s)! Auto-passed turn.`);
+
+        if (room.consecutivePasses >= 4) {
+          handleTrancado(room);
+        } else {
+          advanceTurn(room);
+          scheduleBotTurnIfNeeded(room);
+        }
+      }
+      room.turnStartedAt = Date.now();
+      room.lastUpdateTime = Date.now();
+    }
+  }
+}, 1000);
 
 async function bootstrap() {
   try {

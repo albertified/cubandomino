@@ -24,6 +24,8 @@ export interface GameRoom {
   roomCode: string;
   status: GameStatus;
   targetScore: number;
+  turnTimer?: number; // Turn timer limit in seconds (30 - 120)
+  turnStartedAt?: number; // Timestamp (ms) when current turn started
   isPublic?: boolean;
   hostName?: string;
   hostId?: string;
@@ -59,6 +61,7 @@ export interface RoomListItem {
   humanCount: number;
   status: GameStatus;
   targetScore: number;
+  turnTimer?: number;
   isPublic: boolean;
   lastUpdateTime: number;
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { 
   Trophy, Users, Play, Plus, LogOut, RefreshCw, 
   Bot, ShieldAlert, Sparkles, Send, Clock, HelpCircle, 
@@ -576,6 +576,8 @@ export default function App() {
   const [roomCode, setRoomCode] = useState<string>('');
   const [room, setRoom] = useState<GameRoom | null>(null);
   const [targetScore, setTargetScore] = useState<number>(150);
+  const [turnTimerEnabled, setTurnTimerEnabled] = useState<boolean>(true);
+  const [turnTimer, setTurnTimer] = useState<number>(60);
   const [joiningCode, setJoiningCode] = useState<string>('');
   const [playerSlot, setPlayerSlot] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -595,6 +597,34 @@ export default function App() {
     return (localStorage.getItem('cuban_dominoes_ficha_theme') as FichaThemeId) || 'havana';
   });
 
+  // Tile Drag & Drop Option State
+  const [dragAndDropEnabled, setDragAndDropEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('cuban_dominoes_drag_drop') !== 'false';
+  });
+  const [settingsDragAndDrop, setSettingsDragAndDrop] = useState<boolean>(true);
+  const [draggedHandIdx, setDraggedHandIdx] = useState<number | null>(null);
+  const [isDraggingTile, setIsDraggingTile] = useState<boolean>(false);
+  const [draggingTileKey, setDraggingTileKey] = useState<string | null>(null);
+
+  const [nowMs, setNowMs] = useState<number>(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!draggingTileKey) return;
+    const handlePointerRelease = () => {
+      setDraggingTileKey(null);
+    };
+    window.addEventListener('pointerup', handlePointerRelease);
+    window.addEventListener('touchend', handlePointerRelease);
+    return () => {
+      window.removeEventListener('pointerup', handlePointerRelease);
+      window.removeEventListener('touchend', handlePointerRelease);
+    };
+  }, [draggingTileKey]);
+
   // Settings & Static Page States
   const [language] = useState<Language>('en');
   const [showSettings, setShowSettings] = useState<boolean>(false);
@@ -610,6 +640,7 @@ export default function App() {
     setSettingsName(playerName);
     setSettingsBoardTheme(boardTheme);
     setSettingsFichaTheme(fichaTheme);
+    setSettingsDragAndDrop(dragAndDropEnabled);
     setShowSettings(true);
   };
 
@@ -629,6 +660,9 @@ export default function App() {
 
     setFichaTheme(settingsFichaTheme);
     localStorage.setItem('cuban_dominoes_ficha_theme', settingsFichaTheme);
+
+    setDragAndDropEnabled(settingsDragAndDrop);
+    localStorage.setItem('cuban_dominoes_drag_drop', String(settingsDragAndDrop));
 
     // If currently in a room, send update to server
     if (roomCode && playerId) {
@@ -710,6 +744,18 @@ export default function App() {
       };
       return copy;
     });
+    audio.playClack();
+  };
+
+  const reorderHand = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= localHand.length || toIdx >= localHand.length) return;
+    setLocalHand(prev => {
+      const copy = [...prev];
+      const [moved] = copy.splice(fromIdx, 1);
+      copy.splice(toIdx, 0, moved);
+      return copy;
+    });
+    setSelectedLocalIdx(toIdx);
     audio.playClack();
   };
 
@@ -943,6 +989,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           targetScore,
+          turnTimer: turnTimerEnabled ? turnTimer : 0,
           playerName,
           playerId,
           isPublic,
@@ -1656,6 +1703,8 @@ export default function App() {
                                   <span>Code: <strong className="text-[#006876] font-bold">{r.roomCode}</strong></span>
                                   <span>•</span>
                                   <span>Target: <strong className="text-[#3b1200]">{r.targetScore} PTS</strong></span>
+                                  <span>•</span>
+                                  <span>Timer: <strong className="text-[#006876]">{r.turnTimer ? `${r.turnTimer}s` : 'OFF'}</strong></span>
                                 </div>
                               </div>
 
@@ -1752,36 +1801,136 @@ export default function App() {
                         <div className="relative w-full h-10 mt-2.5 font-mono text-[9px] text-[#504440] uppercase tracking-wider select-none">
                           <div className="absolute top-0 left-0 right-0 h-1 pointer-events-none">
                             {[50, 100, 150, 200, 250, 300, 350, 400, 450, 500].map((v) => {
-                              const pct = ((v - 50) / 450) * 100;
+                              const pct = (v - 50) / 450;
                               const isSelected = targetScore === v;
                               return (
                                 <div
                                   key={v}
                                   className="absolute w-1.5 h-1.5 rounded-full transition-colors"
                                   style={{ 
-                                    left: `${pct}%`, 
-                                    transform: 'translateX(-50%)',
+                                    left: `calc(8px + (100% - 16px) * ${pct})`, 
+                                    top: '50%',
+                                    transform: 'translate(-50%, -50%)',
                                     backgroundColor: isSelected ? '#006876' : (targetScore >= v ? '#83746f' : '#d5c3bd')
                                   }}
                                 />
                               );
                             })}
                           </div>
-                          <span className="absolute top-2.5 left-0 translate-x-0 font-bold">50 PTS</span>
+                          <span 
+                            className="absolute top-2.5 font-bold"
+                            style={{ left: 'calc(8px + (100% - 16px) * 0)', transform: 'translateX(-50%)' }}
+                          >
+                            50 PTS
+                          </span>
                           <div 
                             className={`absolute top-2.5 flex flex-col items-center transition-colors ${targetScore === 150 ? 'text-[#006876] font-bold' : 'text-[#504440]'}`}
-                            style={{ left: '22.2%', transform: 'translateX(-50%)' }}
+                            style={{ left: `calc(8px + (100% - 16px) * ${(150 - 50) / 450})`, transform: 'translateX(-50%)' }}
                           >
                             <span>150 PTS</span>
                             <span className="text-[6.5px] opacity-70 tracking-normal mt-0.5 font-sans font-bold">DEFAULT</span>
                           </div>
                           <span 
                             className={`absolute top-2.5 transition-colors ${targetScore === 300 ? 'text-[#006876] font-bold' : 'text-[#504440]'}`}
-                            style={{ left: '55.6%', transform: 'translateX(-50%)' }}
+                            style={{ left: `calc(8px + (100% - 16px) * ${(300 - 50) / 450})`, transform: 'translateX(-50%)' }}
                           >
                             300 PTS
                           </span>
-                          <span className="absolute top-2.5 right-0 translate-x-0 font-bold">500 PTS</span>
+                          <span 
+                            className="absolute top-2.5 font-bold"
+                            style={{ left: 'calc(8px + (100% - 16px) * 1)', transform: 'translateX(-50%)' }}
+                          >
+                            500 PTS
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Turn Timer Section */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-mono text-[#504440] uppercase tracking-widest font-bold flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-[#006876]" />
+                            Turn Timer
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-[#006876] font-mono">
+                              {turnTimerEnabled ? `${turnTimer} SEC` : 'OFF'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setTurnTimerEnabled(!turnTimerEnabled)}
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
+                                turnTimerEnabled 
+                                  ? 'bg-[#006876] text-white shadow-xs' 
+                                  : 'bg-[#83746f] text-white/90 hover:bg-[#504440]'
+                              }`}
+                            >
+                              {turnTimerEnabled ? 'ON' : 'OFF'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className={`transition-opacity ${turnTimerEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                          <input
+                            type="range"
+                            min={30}
+                            max={120}
+                            step={5}
+                            disabled={!turnTimerEnabled}
+                            value={turnTimer}
+                            onChange={(e) => setTurnTimer(Number(e.target.value))}
+                            className="w-full accent-[#006876] h-2 bg-[#dfdacc] rounded-sm cursor-pointer appearance-none block"
+                          />
+                          <div className="relative w-full h-10 mt-2.5 font-mono text-[9px] text-[#504440] uppercase tracking-wider select-none">
+                            <div className="absolute top-0 left-0 right-0 h-1 pointer-events-none">
+                              {Array.from({ length: 19 }, (_, i) => 30 + i * 5).map((v) => {
+                                const isMajor = v % 15 === 0;
+                                const pct = (v - 30) / 90;
+                                const isSelected = turnTimerEnabled && turnTimer === v;
+                                return (
+                                  <div
+                                    key={v}
+                                    className={`absolute rounded-full transition-colors ${
+                                      isMajor ? 'w-1.5 h-1.5' : 'w-1 h-1 opacity-80'
+                                    }`}
+                                    style={{ 
+                                      left: `calc(8px + (100% - 16px) * ${pct})`, 
+                                      top: '50%',
+                                      transform: 'translate(-50%, -50%)',
+                                      backgroundColor: isSelected 
+                                        ? '#006876' 
+                                        : (turnTimerEnabled && turnTimer >= v ? '#83746f' : '#d5c3bd')
+                                    }}
+                                  />
+                                );
+                              })}
+                            </div>
+                            <span 
+                              className="absolute top-2.5 font-bold"
+                              style={{ left: 'calc(8px + (100% - 16px) * 0)', transform: 'translateX(-50%)' }}
+                            >
+                              30 SEC
+                            </span>
+                            <div 
+                              className={`absolute top-2.5 flex flex-col items-center transition-colors ${turnTimerEnabled && turnTimer === 60 ? 'text-[#006876] font-bold' : 'text-[#504440]'}`}
+                              style={{ left: `calc(8px + (100% - 16px) * ${(60 - 30) / 90})`, transform: 'translateX(-50%)' }}
+                            >
+                              <span>60 SEC</span>
+                              <span className="text-[6.5px] opacity-70 tracking-normal mt-0.5 font-sans font-bold">DEFAULT</span>
+                            </div>
+                            <span 
+                              className={`absolute top-2.5 transition-colors ${turnTimerEnabled && turnTimer === 90 ? 'text-[#006876] font-bold' : 'text-[#504440]'}`}
+                              style={{ left: `calc(8px + (100% - 16px) * ${(90 - 30) / 90})`, transform: 'translateX(-50%)' }}
+                            >
+                              90 SEC
+                            </span>
+                            <span 
+                              className="absolute top-2.5 font-bold"
+                              style={{ left: 'calc(8px + (100% - 16px) * 1)', transform: 'translateX(-50%)' }}
+                            >
+                              120 SEC
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -1822,7 +1971,7 @@ export default function App() {
                           <li>• 55 heavy ivory tiles (0-0 to 9-9)</li>
                           <li>• 10 tiles drawn per player hand</li>
                           <li>• 15 locked tiles remaining in pool</li>
-                          <li>• Automated turn progression counter-clockwise</li>
+                          <li>• Turn timer limit: {turnTimerEnabled ? `${turnTimer}s per move` : 'OFF (Unlimited time)'}</li>
                         </ul>
                       </div>
                     </div>
@@ -2031,12 +2180,41 @@ export default function App() {
                 <p className="text-[10px] font-mono tracking-widest text-[#fe7328] uppercase font-bold">HAVANA SOCIAL CLUB • DOBLE NUEVE</p>
               </div>
 
-              <div className="flex items-center gap-3">
-                {room.status === 'playing' ? (
-                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#006876] border border-[#8debfd]/40 rounded-sm text-xs text-white font-mono font-bold uppercase shadow-sm">
-                    <span className="w-2 h-2 rounded-full bg-[#fe7328] animate-pulse" />
-                    {t.turn}: {room.board.length === 0 ? `Team ${room.startingTeam === 0 ? 'A' : 'B'} (Either Teammate)` : activePlayerName}
-                  </span>
+              <div className="flex items-center gap-2">
+                {room.status === 'playing' || room.status === 'selecting_starter' ? (
+                  <>
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#006876] border border-[#8debfd]/40 rounded-sm text-xs text-white font-mono font-bold uppercase shadow-sm">
+                      <span className="w-2 h-2 rounded-full bg-[#fe7328] animate-pulse" />
+                      {room.status === 'selecting_starter'
+                        ? `Selecting Starter (${room.starterSelection?.selectingTeam === 0 ? 'Team A' : 'Team B'})`
+                        : `${t.turn}: ${room.board.length === 0 ? `Team ${room.startingTeam === 0 ? 'A' : 'B'} (First Play)` : activePlayerName}`}
+                    </span>
+                    {(() => {
+                      const tVal = room.turnTimer || 0;
+                      if (!tVal || !room.turnStartedAt) {
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#200d07] border border-white/10 rounded-sm text-xs text-white/50 font-mono font-bold">
+                            <Clock className="w-3.5 h-3.5 text-white/40" />
+                            ∞
+                          </span>
+                        );
+                      }
+                      const elapsed = Math.max(0, (nowMs - room.turnStartedAt) / 1000);
+                      const rem = Math.max(0, Math.ceil(tVal - elapsed));
+                      return (
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-mono font-bold border transition-colors ${
+                          rem <= 5
+                            ? 'bg-red-950/80 border-red-500 text-red-400 animate-pulse'
+                            : rem <= 10
+                              ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                              : 'bg-[#200d07] border-[#006876] text-[#8debfd]'
+                        }`}>
+                          <Clock className="w-3.5 h-3.5" />
+                          {rem}s
+                        </span>
+                      );
+                    })()}
+                  </>
                 ) : room.status === 'waiting' ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#200d07] border border-[#83746f]/40 rounded-sm text-xs text-[#eee8da] font-mono font-bold">
                     {t.lobbyStage}
@@ -2076,6 +2254,24 @@ export default function App() {
               {/* STAGE VIEW A: LOBBY ROOM */}
               {room.status === 'waiting' && (
                 <div className="space-y-6 max-w-4xl mx-auto w-full my-auto">
+                  {/* Lobby Match Configuration Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-[#200d07]/70 border border-[#006876]/40 px-4 py-3 rounded-xl shadow-inner">
+                    <div className="flex flex-wrap items-center gap-3 text-xs font-mono font-bold text-[#eee8da]">
+                      <span className="flex items-center gap-1.5 text-[#8debfd]">
+                        <Trophy className="w-4 h-4 text-[#fe7328]" />
+                        Target: <span className="text-white">{room.targetScore} PTS</span>
+                      </span>
+                      <span className="text-[#83746f]">•</span>
+                      <span className="flex items-center gap-1.5 text-[#8debfd]">
+                        <Clock className="w-4 h-4 text-[#006876]" />
+                        Turn Timer: <span className="text-white">{room.turnTimer ? `${room.turnTimer} SEC` : 'OFF'}</span>
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-mono font-bold text-[#83746f] uppercase">
+                      Room Code: <span className="text-[#fe7328] font-extrabold">{room.roomCode}</span>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {room.players.map((player, idx) => {
                       const teamNum = idx % 2;
@@ -2241,6 +2437,12 @@ export default function App() {
                       )) || (room.status === 'selecting_starter' && room.starterSelection && (
                         idx % 2 === room.starterSelection.selectingTeam
                       ));
+
+                      const tVal = room.turnTimer || 0;
+                      const elapsed = (isTurn && tVal > 0 && room.turnStartedAt) ? Math.max(0, (nowMs - room.turnStartedAt) / 1000) : 0;
+                      const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
+                      const ratio = (isTurn && tVal > 0) ? Math.max(0, Math.min(1, remSec / tVal)) : 1;
+
                       return (
                         <div className="absolute top-2 left-1/2 transform -translate-x-1/2 z-30 flex flex-col items-center">
                           <div className={`px-4 py-2 rounded-xl border flex items-center gap-2 transition-all shadow-xl ${
@@ -2255,7 +2457,17 @@ export default function App() {
                             <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${isTurn ? 'bg-[#111113]/10 text-[#111113]/80' : 'bg-[#111113] text-white/40'}`}>
                               🀰 {player?.hand.length || 0}
                             </span>
+                            {isTurn && tVal > 0 && (
+                              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${remSec <= 5 ? 'bg-red-600 text-white animate-pulse' : remSec <= 10 ? 'bg-amber-500 text-slate-950' : 'bg-[#111113] text-[#fbbf24]'}`}>
+                                ⏱️ {remSec}s
+                              </span>
+                            )}
                           </div>
+                          {isTurn && tVal > 0 && (
+                            <div className="w-full bg-black/40 h-1 rounded-full overflow-hidden mt-1 max-w-[140px]">
+                              <div className={`h-full transition-all duration-300 ${remSec <= 5 ? 'bg-red-500' : remSec <= 10 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${ratio * 100}%` }} />
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -2271,6 +2483,12 @@ export default function App() {
                       )) || (room.status === 'selecting_starter' && room.starterSelection && (
                         idx % 2 === room.starterSelection.selectingTeam
                       ));
+
+                      const tVal = room.turnTimer || 0;
+                      const elapsed = (isTurn && tVal > 0 && room.turnStartedAt) ? Math.max(0, (nowMs - room.turnStartedAt) / 1000) : 0;
+                      const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
+                      const ratio = (isTurn && tVal > 0) ? Math.max(0, Math.min(1, remSec / tVal)) : 1;
+
                       return (
                         <div className="absolute left-2 top-1/2 transform -translate-y-1/2 z-30 flex flex-col items-center">
                           <div className={`px-4 py-2 rounded-xl border flex flex-col items-center gap-1 transition-all shadow-xl ${
@@ -2281,10 +2499,22 @@ export default function App() {
                             <span className="text-xs font-bold leading-none truncate max-w-[110px]">
                               {player?.name || `Seat ${idx + 1}`}
                             </span>
-                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${isTurn ? 'bg-[#111113]/10 text-[#111113]/80' : 'bg-[#111113] text-white/40'}`}>
-                              🀰 {player?.hand.length || 0}
-                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${isTurn ? 'bg-[#111113]/10 text-[#111113]/80' : 'bg-[#111113] text-white/40'}`}>
+                                🀰 {player?.hand.length || 0}
+                              </span>
+                              {isTurn && tVal > 0 && (
+                                <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${remSec <= 5 ? 'bg-red-600 text-white animate-pulse' : remSec <= 10 ? 'bg-amber-500 text-slate-950' : 'bg-[#111113] text-[#fbbf24]'}`}>
+                                  ⏱️ {remSec}s
+                                </span>
+                              )}
+                            </div>
                           </div>
+                          {isTurn && tVal > 0 && (
+                            <div className="w-full bg-black/40 h-1 rounded-full overflow-hidden mt-1 max-w-[120px]">
+                              <div className={`h-full transition-all duration-300 ${remSec <= 5 ? 'bg-red-500' : remSec <= 10 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${ratio * 100}%` }} />
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -2300,6 +2530,12 @@ export default function App() {
                       )) || (room.status === 'selecting_starter' && room.starterSelection && (
                         idx % 2 === room.starterSelection.selectingTeam
                       ));
+
+                      const tVal = room.turnTimer || 0;
+                      const elapsed = (isTurn && tVal > 0 && room.turnStartedAt) ? Math.max(0, (nowMs - room.turnStartedAt) / 1000) : 0;
+                      const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
+                      const ratio = (isTurn && tVal > 0) ? Math.max(0, Math.min(1, remSec / tVal)) : 1;
+
                       return (
                         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 z-30 flex flex-col items-center">
                           <div className={`px-4 py-2 rounded-xl border flex flex-col items-center gap-1 transition-all shadow-xl ${
@@ -2310,10 +2546,22 @@ export default function App() {
                             <span className="text-xs font-bold leading-none truncate max-w-[110px]">
                               {player?.name || `Seat ${idx + 1}`}
                             </span>
-                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${isTurn ? 'bg-[#111113]/10 text-[#111113]/80' : 'bg-[#111113] text-white/40'}`}>
-                              🀰 {player?.hand.length || 0}
-                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${isTurn ? 'bg-[#111113]/10 text-[#111113]/80' : 'bg-[#111113] text-white/40'}`}>
+                                🀰 {player?.hand.length || 0}
+                              </span>
+                              {isTurn && tVal > 0 && (
+                                <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${remSec <= 5 ? 'bg-red-600 text-white animate-pulse' : remSec <= 10 ? 'bg-amber-500 text-slate-950' : 'bg-[#111113] text-[#fbbf24]'}`}>
+                                  ⏱️ {remSec}s
+                                </span>
+                              )}
+                            </div>
                           </div>
+                          {isTurn && tVal > 0 && (
+                            <div className="w-full bg-black/40 h-1 rounded-full overflow-hidden mt-1 max-w-[120px]">
+                              <div className={`h-full transition-all duration-300 ${remSec <= 5 ? 'bg-red-500' : remSec <= 10 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${ratio * 100}%` }} />
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -2521,6 +2769,11 @@ export default function App() {
                       const isTurn = isMyTurn || (room.status === 'selecting_starter' && room.starterSelection && (
                         playerSlot % 2 === room.starterSelection.selectingTeam
                       ));
+                      const tVal = room.turnTimer || 0;
+                      const elapsed = (isTurn && tVal > 0 && room.turnStartedAt) ? Math.max(0, (nowMs - room.turnStartedAt) / 1000) : 0;
+                      const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
+                      const ratio = (isTurn && tVal > 0) ? Math.max(0, Math.min(1, remSec / tVal)) : 1;
+
                       return (
                         <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 z-30 flex flex-col items-center">
                           <div className={`px-4 py-2 rounded-xl border flex items-center gap-2 transition-all shadow-xl ${
@@ -2537,7 +2790,17 @@ export default function App() {
                             <span className={`text-[10px] font-mono font-bold rounded-md px-1.5 py-0.5 ${isTurn ? 'bg-[#111113]/10 text-[#111113]/80' : 'bg-[#111113] text-white/40'}`}>
                               🀰 {room.players[playerSlot]?.hand.length || 0}
                             </span>
+                            {isTurn && tVal > 0 && (
+                              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${remSec <= 5 ? 'bg-red-600 text-white animate-pulse' : remSec <= 10 ? 'bg-amber-500 text-slate-950' : 'bg-[#111113] text-[#fbbf24]'}`}>
+                                ⏱️ {remSec}s
+                              </span>
+                            )}
                           </div>
+                          {isTurn && tVal > 0 && (
+                            <div className="w-full bg-black/40 h-1 rounded-full overflow-hidden mt-1 max-w-[140px]">
+                              <div className={`h-full transition-all duration-300 ${remSec <= 5 ? 'bg-red-500' : remSec <= 10 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${ratio * 100}%` }} />
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -2557,9 +2820,25 @@ export default function App() {
                               ACTIVE TURN
                             </span>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !dragAndDropEnabled;
+                              setDragAndDropEnabled(next);
+                              localStorage.setItem('cuban_dominoes_drag_drop', String(next));
+                            }}
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer border ${
+                              dragAndDropEnabled
+                                ? 'bg-[#006876]/40 border-[#8debfd] text-[#8debfd]'
+                                : 'bg-white/5 border-white/10 text-white/40 hover:text-white'
+                            }`}
+                            title="Toggle Drag to Organize Fichas"
+                          >
+                            <span>🖐️ Drag to Organize: {dragAndDropEnabled ? 'ON' : 'OFF'}</span>
+                          </button>
                         </div>
                         <span className="text-[10px] text-white/40 mt-1 font-sans">
-                          💡 Click tile to select. Use on-tile buttons, <b>A/D/Arrow Keys</b> to move, and <b>Space/F</b> to flip.
+                          💡 {dragAndDropEnabled ? 'Drag tiles onto each other to reorder your fichas. Click tile or press Space to play.' : 'Click tile to select and play. Keyboard: A/D/Arrows move, Space/F flips.'}
                         </span>
                       </div>
                       
@@ -2597,7 +2876,22 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap justify-center items-center gap-2 md:gap-3.5 py-1 z-10">
+                    <Reorder.Group
+                      axis="x"
+                      values={localHand}
+                      onReorder={(newHand) => {
+                        if (selectedLocalIdx !== null && localHand[selectedLocalIdx]) {
+                          const selectedOriginalIdx = localHand[selectedLocalIdx].originalIndex;
+                          const newIdx = newHand.findIndex(item => item.originalIndex === selectedOriginalIdx);
+                          if (newIdx !== -1) {
+                            setSelectedLocalIdx(newIdx);
+                          }
+                        }
+                        setLocalHand(newHand);
+                        audio.playClack();
+                      }}
+                      className="flex flex-wrap justify-center items-center gap-2 md:gap-3.5 py-1 z-10"
+                    >
                       {localHand.length === 0 ? (
                         <p className="text-xs text-white/30 font-sans italic py-4">
                           No tiles in hand. Round complete.
@@ -2607,13 +2901,36 @@ export default function App() {
                           const serverIdx = item.originalIndex;
                           const isPlayable = playableIndexes.includes(serverIdx);
                           const isSelected = selectedLocalIdx === idx || selectedTileIndex === serverIdx;
+                          const stableKey = `tile-${item.val[0]}-${item.val[1]}-${item.originalIndex}`;
+                          const isItemDragging = draggingTileKey === stableKey;
 
                           return (
-                            <div key={idx} className="relative group flex flex-col items-center pb-8">
+                            <Reorder.Item
+                              key={stableKey}
+                              value={item}
+                              dragListener={dragAndDropEnabled}
+                              onDragStart={() => {
+                                setDraggingTileKey(stableKey);
+                              }}
+                              onDragEnd={() => {
+                                setDraggingTileKey(null);
+                              }}
+                              animate={{
+                                zIndex: isItemDragging ? 50 : 1,
+                              }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                              onPointerDown={() => {
+                                setSelectedLocalIdx(idx);
+                              }}
+                              className={`relative group flex flex-col items-center pb-8 ${
+                                dragAndDropEnabled ? 'cursor-grab active:cursor-grabbing select-none' : ''
+                              }`}
+                            >
                               <DominoTile
                                 val1={item.val[0]}
                                 val2={item.val[1]}
                                 playable={true}
+                                disableHover={draggingTileKey !== null}
                                 highlighted={isSelected}
                                 fichaTheme={fichaTheme}
                                 onClick={() => {
@@ -2628,6 +2945,8 @@ export default function App() {
                                   isPlayable && isMyTurn
                                     ? 'ring-2 ring-emerald-400 shadow-emerald-500/20'
                                     : ''
+                                } ${
+                                  isItemDragging ? 'shadow-2xl' : ''
                                 }`}
                               />
                               
@@ -2674,11 +2993,11 @@ export default function App() {
                                   <ArrowRight className="w-2.5 h-2.5" />
                                 </button>
                               </div>
-                            </div>
+                            </Reorder.Item>
                           );
                         })
                       )}
-                    </div>
+                    </Reorder.Group>
 
                     {isMyTurn && room.status === 'playing' && myHand.length > 0 && (
                       <div className="mt-4 z-10">
@@ -2700,7 +3019,7 @@ export default function App() {
 
                             <button
                               onClick={passTurn}
-                              className="px-6 py-2.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-mono font-bold text-xs rounded-xl shadow-xl transition-all cursor-pointer uppercase tracking-wider flex items-center gap-2 shrink-0 animate-bounce hover:animate-none active:scale-95"
+                              className="px-6 py-2.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-mono font-bold text-xs rounded-xl shadow-xl transition-all cursor-pointer uppercase tracking-wider flex items-center gap-2 shrink-0 hover:scale-105 active:scale-95"
                             >
                               <SkipForward className="w-4 h-4 fill-[#111113]" />
                               PASO / PASS TURN
@@ -2727,6 +3046,32 @@ export default function App() {
                             </button>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {!isMyTurn && room.status === 'playing' && (
+                      <div className="mt-4 z-10">
+                        <div className="flex items-center justify-between bg-[#111113]/80 border border-white/10 px-4 py-2.5 rounded-xl">
+                          <div className="flex items-center gap-2 text-white/70 text-xs font-mono">
+                            <Clock className="w-4 h-4 text-[#8debfd] animate-pulse" />
+                            <span>
+                              Waiting for <b>{room.players[room.turn]?.name || `Seat ${room.turn + 1}`}</b> to play...
+                            </span>
+                          </div>
+                          {room.turnTimer && room.turnTimer > 0 && room.turnStartedAt ? (
+                            <span className={`px-2.5 py-1 rounded text-xs font-mono font-bold ${
+                              Math.max(0, Math.ceil(room.turnTimer - ((nowMs - room.turnStartedAt) / 1000))) <= 5
+                                ? 'bg-red-500 text-white animate-pulse'
+                                : Math.max(0, Math.ceil(room.turnTimer - ((nowMs - room.turnStartedAt) / 1000))) <= 10
+                                  ? 'bg-amber-400 text-slate-950'
+                                  : 'bg-[#006876]/40 text-[#8debfd] border border-[#006876]'
+                            }`}>
+                              ⏱️ {Math.max(0, Math.ceil(room.turnTimer - ((nowMs - room.turnStartedAt) / 1000)))}s remaining
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-mono text-white/40">⏱️ Unlimited Time</span>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -3313,6 +3658,24 @@ export default function App() {
                       }`}
                     >
                       {soundEnabled ? t.mute : t.unmute}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between bg-[#111113] p-3.5 rounded-xl border border-white/10">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-mono text-white font-bold block">Drag to Organize Fichas</span>
+                      <span className="text-[10px] font-sans text-white/50 block">Drag tiles left and right to reorder your hand</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSettingsDragAndDrop(!settingsDragAndDrop)}
+                      className={`px-3.5 py-1.5 text-xs font-mono font-bold uppercase rounded-md border transition-all cursor-pointer ${
+                        settingsDragAndDrop
+                          ? 'bg-[#006876] border-[#8debfd] text-white shadow-sm'
+                          : 'bg-transparent border-white/10 text-white/40'
+                      }`}
+                    >
+                      {settingsDragAndDrop ? 'Enabled' : 'Disabled'}
                     </button>
                   </div>
                 </div>

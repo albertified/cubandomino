@@ -8,6 +8,7 @@ interface DominoTileProps {
   isDouble?: boolean;
   highlighted?: boolean;
   playable?: boolean;
+  disableHover?: boolean;
   onClick?: () => void;
   className?: string;
   size?: 'sm' | 'md' | 'lg';
@@ -62,6 +63,7 @@ export const DominoTile: React.FC<DominoTileProps> = ({
   isDouble = false,
   highlighted = false,
   playable = false,
+  disableHover = false,
   onClick,
   className = '',
   size = 'md',
@@ -118,8 +120,8 @@ export const DominoTile: React.FC<DominoTileProps> = ({
 
   return (
     <motion.div
-      whileHover={playable ? { scale: 1.05, y: -4 } : {}}
-      whileTap={playable ? { scale: 0.95 } : {}}
+      whileHover={playable && !disableHover ? { y: -4 } : {}}
+      whileTap={playable ? { y: -1 } : {}}
       onClick={playable && onClick ? onClick : undefined}
       className={`relative select-none flex ${isVertical ? 'flex-col' : 'flex-row'} items-center justify-between ${
         isVertical ? config.tile : config.tileDouble
