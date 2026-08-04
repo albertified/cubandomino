@@ -1327,6 +1327,10 @@ export default function App() {
  
   const resetGame = async () => {
     if (!roomCode) return;
+    if (!isHost) {
+      setError('Only the lobby host can reset scores.');
+      return;
+    }
     if (!confirm('Are you sure you want to reset all scores to 0 and start over?')) return;
     try {
       const response = await fetch(`/api/rooms/${roomCode}/reset`, {
@@ -1334,7 +1338,10 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId }),
       });
-      if (!response.ok) throw new Error('Failed to reset game.');
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to reset game.');
+      }
       const data = await response.json();
       setRoom(data.room);
       setSelectedTileIndex(null);
@@ -3390,7 +3397,7 @@ export default function App() {
 
             {/* Game controls / stats */}
             <div className="p-6 border-t border-white/5 bg-[#141416] flex flex-col gap-2">
-              {room.status !== 'waiting' && (
+              {room.status !== 'waiting' && isHost && (
                 <button
                   onClick={resetGame}
                   className="w-full py-2.5 bg-transparent border border-white/10 hover:border-red-900/40 text-white/60 hover:text-red-200 hover:bg-red-950/10 text-xs font-mono rounded-lg transition-all cursor-pointer uppercase tracking-wider"
@@ -3541,13 +3548,20 @@ export default function App() {
               </div>
 
               <div className="flex gap-3">
-                <button
-                  onClick={resetGame}
-                  className="flex-1 py-3.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-sans font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg uppercase tracking-wider font-mono"
-                >
-                  <RefreshCw className="w-4 h-4 text-[#111113]" />
-                  Rematch
-                </button>
+                {isHost ? (
+                  <button
+                    onClick={resetGame}
+                    className="flex-1 py-3.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-sans font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg uppercase tracking-wider font-mono"
+                  >
+                    <RefreshCw className="w-4 h-4 text-[#111113]" />
+                    Rematch
+                  </button>
+                ) : (
+                  <div className="flex-1 py-3.5 bg-white/5 border border-white/10 text-white/40 font-mono text-xs rounded-xl flex items-center justify-center gap-2 uppercase tracking-wider">
+                    <RefreshCw className="w-3.5 h-3.5 text-white/30 animate-spin" />
+                    Waiting for Host...
+                  </div>
+                )}
                 
                 <button
                   onClick={exitRoom}

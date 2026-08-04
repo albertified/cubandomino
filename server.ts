@@ -1273,10 +1273,17 @@ app.post('/api/rooms/:code/next-round', (req, res) => {
 // Reset entire game (keep players)
 app.post('/api/rooms/:code/reset', (req, res) => {
   const code = sanitizeRoomCode(req.params.code);
+  const requesterId = sanitizeId(req.body?.playerId || req.body?.requesterId);
   const room = rooms.get(code);
 
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
+  }
+
+  // Permission check: only host can reset game and scores
+  const isHost = room.hostId ? room.hostId === requesterId : requesterId === room.players[0]?.id;
+  if (!isHost) {
+    return res.status(403).json({ error: 'Only the lobby host can reset scores and restart the game.' });
   }
 
   room.status = 'waiting';
