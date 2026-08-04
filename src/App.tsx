@@ -39,7 +39,8 @@ function cryptoRandomId(prefix: string = 'p'): string {
 // Browser-based Web Audio API synthesizer for high-fidelity offline sounds
 class DominoSynth {
   private ctx: AudioContext | null = null;
-  public enabled: boolean = true;
+  public musicEnabled: boolean = true;
+  public sfxEnabled: boolean = true;
   private musicInterval: any = null;
   private musicPlaying: boolean = false;
   private musicGainNode: GainNode | null = null;
@@ -82,7 +83,7 @@ class DominoSynth {
 
   // Double hard plastic tile clack
   playClack() {
-    if (!this.enabled) return;
+    if (!this.sfxEnabled) return;
     try {
       this.initCtx();
       const ctx = this.ctx!;
@@ -115,7 +116,7 @@ class DominoSynth {
 
   // Auto skip warning beep (downward warning sweep)
   playSkip() {
-    if (!this.enabled) return;
+    if (!this.sfxEnabled) return;
     try {
       this.initCtx();
       const ctx = this.ctx!;
@@ -141,7 +142,7 @@ class DominoSynth {
 
   // Win arpeggio chime
   playWin() {
-    if (!this.enabled) return;
+    if (!this.sfxEnabled) return;
     try {
       this.initCtx();
       const ctx = this.ctx!;
@@ -190,7 +191,7 @@ class DominoSynth {
 
       this.musicGainNode = ctx.createGain();
       // Set volume to be extremely soft and ambient (0.015 is ideal)
-      this.musicGainNode.gain.setValueAtTime(this.enabled ? 0.015 : 0, ctx.currentTime);
+      this.musicGainNode.gain.setValueAtTime(this.musicEnabled ? 0.015 : 0, ctx.currentTime);
       this.musicGainNode.connect(ctx.destination);
       
       this.musicPlaying = true;
@@ -200,7 +201,7 @@ class DominoSynth {
       
       const playStep = () => {
         if (!this.musicPlaying) return;
-        if (!this.enabled || !this.musicGainNode) return;
+        if (!this.musicEnabled || !this.musicGainNode) return;
         
         const now = ctx.currentTime;
 
@@ -542,13 +543,17 @@ class DominoSynth {
     }
   }
 
-  updateVolume(enabled: boolean) {
-    this.enabled = enabled;
+  updateMusicVolume(enabled: boolean) {
+    this.musicEnabled = enabled;
     if (this.musicGainNode) {
       try {
         this.musicGainNode.gain.setValueAtTime(enabled ? 0.015 : 0, this.ctx ? this.ctx.currentTime : 0);
       } catch (e) {}
     }
+  }
+
+  updateSfxVolume(enabled: boolean) {
+    this.sfxEnabled = enabled;
   }
 }
 
@@ -583,7 +588,12 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [showRules, setShowRules] = useState<boolean>(false);
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [musicEnabled, setMusicEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('cuban_dominoes_music_enabled') !== 'false';
+  });
+  const [sfxEnabled, setSfxEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('cuban_dominoes_sfx_enabled') !== 'false';
+  });
   const [currentTrack, setCurrentTrack] = useState<'jazz' | 'fairy' | 'havana'>(() => {
     return (localStorage.getItem('cuban_dominoes_track') as 'jazz' | 'fairy' | 'havana') || 'jazz';
   });
@@ -637,6 +647,8 @@ export default function App() {
   const [settingsName, setSettingsName] = useState<string>('');
   const [settingsBoardTheme, setSettingsBoardTheme] = useState<BoardThemeId>('havana');
   const [settingsFichaTheme, setSettingsFichaTheme] = useState<FichaThemeId>('havana');
+  const [settingsMusicEnabled, setSettingsMusicEnabled] = useState<boolean>(true);
+  const [settingsSfxEnabled, setSettingsSfxEnabled] = useState<boolean>(true);
   const [settingsSavedToast, setSettingsSavedToast] = useState<boolean>(false);
 
   // Domino Tile Hand Scale State
@@ -657,6 +669,8 @@ export default function App() {
     setSettingsFichaTheme(fichaTheme);
     setSettingsDragAndDrop(dragAndDropEnabled);
     setSettingsHandScale(handTileScale);
+    setSettingsMusicEnabled(musicEnabled);
+    setSettingsSfxEnabled(sfxEnabled);
     setShowSettings(true);
   };
 
@@ -676,6 +690,12 @@ export default function App() {
 
     setFichaTheme(settingsFichaTheme);
     localStorage.setItem('cuban_dominoes_ficha_theme', settingsFichaTheme);
+
+    setMusicEnabled(settingsMusicEnabled);
+    localStorage.setItem('cuban_dominoes_music_enabled', String(settingsMusicEnabled));
+
+    setSfxEnabled(settingsSfxEnabled);
+    localStorage.setItem('cuban_dominoes_sfx_enabled', String(settingsSfxEnabled));
 
     setDragAndDropEnabled(settingsDragAndDrop);
     localStorage.setItem('cuban_dominoes_drag_drop', String(settingsDragAndDrop));
@@ -841,10 +861,11 @@ export default function App() {
     localStorage.setItem('cuban_dominoes_track', currentTrack);
   }, [currentTrack]);
 
-  // Sync sound settings & start/stop background music loop on soundToggle
+  // Sync music settings & start/stop background music loop on musicEnabled toggle
   useEffect(() => {
-    audio.updateVolume(soundEnabled);
-    if (soundEnabled) {
+    audio.updateMusicVolume(musicEnabled);
+    localStorage.setItem('cuban_dominoes_music_enabled', String(musicEnabled));
+    if (musicEnabled) {
       audio.startMusic();
     } else {
       audio.stopMusic();
@@ -852,12 +873,18 @@ export default function App() {
     return () => {
       audio.stopMusic();
     };
-  }, [soundEnabled, currentTrack]);
+  }, [musicEnabled, currentTrack]);
+
+  // Sync SFX settings
+  useEffect(() => {
+    audio.updateSfxVolume(sfxEnabled);
+    localStorage.setItem('cuban_dominoes_sfx_enabled', String(sfxEnabled));
+  }, [sfxEnabled]);
 
   // Gracefully handle browser auto-play policies by triggering on first interaction
   useEffect(() => {
     const resumeAudio = () => {
-      if (soundEnabled) {
+      if (musicEnabled) {
         audio.startMusic();
       }
     };
@@ -867,7 +894,7 @@ export default function App() {
       window.removeEventListener('click', resumeAudio);
       window.removeEventListener('touchstart', resumeAudio);
     };
-  }, [soundEnabled]);
+  }, [musicEnabled]);
 
   // Sync player name changes to localStorage
   const handleSaveName = (name: string) => {
@@ -1491,7 +1518,7 @@ export default function App() {
                 {t.appSub}
               </p>
             </div>
-            <div className="audio-ctrl flex gap-3 md:gap-4 items-center text-right font-mono text-[10px] uppercase shrink-0">
+            <div className="audio-ctrl flex flex-wrap gap-2.5 sm:gap-3 items-center text-right font-mono text-[10px] uppercase shrink-0">
               <div className="hidden sm:block">
                 <span className="block text-[8px] opacity-60 mb-0.5 text-[#d5c3bd]">{t.track}</span>
                 <span className="text-[#8debfd] font-bold">
@@ -1506,11 +1533,28 @@ export default function App() {
                 {t.switch}
               </button>
               <button 
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className="border border-[#83746f]/40 hover:border-[#8debfd] hover:text-[#8debfd] px-2.5 py-1 cursor-pointer transition-colors bg-[#200d07]/60 text-[#eee8da] rounded-xs"
-                title={soundEnabled ? t.mute : t.unmute}
+                onClick={() => setMusicEnabled(!musicEnabled)}
+                className={`border px-2.5 py-1 cursor-pointer transition-colors rounded-xs flex items-center gap-1 ${
+                  musicEnabled 
+                    ? 'border-[#006876] bg-[#006876]/40 text-[#8debfd]' 
+                    : 'border-[#83746f]/40 bg-[#200d07]/60 text-[#83746f] hover:text-[#eee8da]'
+                }`}
+                title={musicEnabled ? "Mute Background Music" : "Unmute Background Music"}
               >
-                {soundEnabled ? t.mute : t.unmute}
+                <Music className="w-3 h-3" />
+                <span>{musicEnabled ? "Music: ON" : "Music: OFF"}</span>
+              </button>
+              <button 
+                onClick={() => setSfxEnabled(!sfxEnabled)}
+                className={`border px-2.5 py-1 cursor-pointer transition-colors rounded-xs flex items-center gap-1 ${
+                  sfxEnabled 
+                    ? 'border-[#006876] bg-[#006876]/40 text-[#8debfd]' 
+                    : 'border-[#83746f]/40 bg-[#200d07]/60 text-[#83746f] hover:text-[#eee8da]'
+                }`}
+                title={sfxEnabled ? "Mute Sound Effects" : "Unmute Sound Effects"}
+              >
+                {sfxEnabled ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
+                <span>{sfxEnabled ? "SFX: ON" : "SFX: OFF"}</span>
               </button>
               <button 
                 onClick={openSettingsModal}
@@ -2130,34 +2174,53 @@ export default function App() {
               <span className="text-[10px] font-mono font-bold tracking-widest text-[#fe7328]">CLUB</span>
             </div>
 
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3.5">
               {/* Track Toggle */}
               <button 
                 onClick={() => setCurrentTrack(currentTrack === 'jazz' ? 'fairy' : (currentTrack === 'fairy' ? 'havana' : 'jazz'))}
-                className={`p-3 rounded-md border transition-all cursor-pointer bg-[#200d07] flex flex-col items-center justify-center ${
-                  soundEnabled 
+                className={`p-2.5 rounded-md border transition-all cursor-pointer bg-[#200d07] flex flex-col items-center justify-center ${
+                  musicEnabled 
                     ? 'border-[#006876] text-[#8debfd] shadow-md' 
                     : 'border-[#83746f]/30 text-[#83746f] opacity-50 hover:opacity-100'
                 }`}
                 title={`Track: ${currentTrack === 'jazz' ? 'Jazz Lounge' : (currentTrack === 'fairy' ? 'Fairy Fountain' : 'Havana Montuno')} (Click to switch)`}
               >
-                <Music className="w-5 h-5" />
-                <span className="text-[7px] font-mono uppercase tracking-widest mt-1.5 font-bold leading-none text-[#eee8da]">
+                <Music className="w-4 h-4" />
+                <span className="text-[7px] font-mono uppercase tracking-widest mt-1 font-bold leading-none text-[#eee8da]">
                   {currentTrack === 'jazz' ? 'Jazz' : (currentTrack === 'fairy' ? 'Zelda' : 'Havana')}
                 </span>
               </button>
 
-              {/* Sounds Switch */}
+              {/* Music Switch */}
               <button 
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`p-3 rounded-md border transition-all cursor-pointer ${
-                  soundEnabled 
+                onClick={() => setMusicEnabled(!musicEnabled)}
+                className={`p-2.5 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center ${
+                  musicEnabled 
                     ? 'bg-[#200d07] border-[#006876] text-[#8debfd] shadow-sm' 
                     : 'bg-transparent border-[#83746f]/30 text-[#83746f] hover:text-[#eee8da]'
                 }`}
-                title={soundEnabled ? "Mute Background Music" : "Unmute Background Music"}
+                title={musicEnabled ? "Mute Background Music" : "Unmute Background Music"}
               >
-                {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+                <Music className="w-4 h-4" />
+                <span className="text-[7px] font-mono uppercase tracking-widest mt-1 font-bold leading-none">
+                  {musicEnabled ? 'MUS ON' : 'MUS OFF'}
+                </span>
+              </button>
+
+              {/* SFX Switch */}
+              <button 
+                onClick={() => setSfxEnabled(!sfxEnabled)}
+                className={`p-2.5 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center ${
+                  sfxEnabled 
+                    ? 'bg-[#200d07] border-[#006876] text-[#8debfd] shadow-sm' 
+                    : 'bg-transparent border-[#83746f]/30 text-[#83746f] hover:text-[#eee8da]'
+                }`}
+                title={sfxEnabled ? "Mute Sound Effects" : "Unmute Sound Effects"}
+              >
+                {sfxEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                <span className="text-[7px] font-mono uppercase tracking-widest mt-1 font-bold leading-none">
+                  {sfxEnabled ? 'SFX ON' : 'SFX OFF'}
+                </span>
               </button>
 
               {/* Settings Switch */}
@@ -3703,11 +3766,11 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Section 3: Custom Boards (5 Mesas) */}
+                {/* Section 3: Custom Boards */}
                 <div className="space-y-3 pt-4 border-t border-white/10">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-mono uppercase tracking-widest text-[#8debfd] font-bold">
-                      Custom Domino Board (5 Mesas)
+                      Custom Domino Board ({Object.keys(BOARD_THEMES).length} Themes)
                     </label>
                     <span className="text-[10px] text-white/40 font-mono">Independent Board</span>
                   </div>
@@ -3752,11 +3815,11 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Section 4: Custom Fichas (5 Sets of Domino Tiles) */}
+                {/* Section 4: Custom Fichas */}
                 <div className="space-y-3 pt-4 border-t border-white/10">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-mono uppercase tracking-widest text-[#fe7328] font-bold">
-                      Custom Fichas (5 Domino Tile Sets)
+                      Custom Fichas ({Object.keys(FICHA_THEMES).length} Domino Tile Sets)
                     </label>
                     <span className="text-[10px] text-white/40 font-mono">Independent Tiles</span>
                   </div>
@@ -3811,6 +3874,7 @@ export default function App() {
                     {t.audioTitle}
                   </label>
                   
+                  {/* Track Selection */}
                   <div className="flex items-center justify-between bg-[#111113] p-3.5 rounded-xl border border-white/10">
                     <span className="text-xs font-mono text-white/80">{t.musicTrack}</span>
                     <div className="flex gap-1.5">
@@ -3834,18 +3898,41 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Background Music Toggle */}
                   <div className="flex items-center justify-between bg-[#111113] p-3.5 rounded-xl border border-white/10">
-                    <span className="text-xs font-mono text-white/80">{t.soundEffects}</span>
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-mono text-white font-bold block">{t.bgMusic}</span>
+                      <span className="text-[10px] font-sans text-white/50 block">Ambient background melody tracks</span>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setSoundEnabled(!soundEnabled)}
+                      onClick={() => setSettingsMusicEnabled(!settingsMusicEnabled)}
                       className={`px-3.5 py-1.5 text-xs font-mono font-bold uppercase rounded-md border transition-all cursor-pointer ${
-                        soundEnabled
+                        settingsMusicEnabled
                           ? 'bg-[#006876] border-[#8debfd] text-white shadow-sm'
                           : 'bg-transparent border-white/10 text-white/40'
                       }`}
                     >
-                      {soundEnabled ? t.mute : t.unmute}
+                      {settingsMusicEnabled ? t.musicOn : t.musicOff}
+                    </button>
+                  </div>
+
+                  {/* Sound Effects Toggle */}
+                  <div className="flex items-center justify-between bg-[#111113] p-3.5 rounded-xl border border-white/10">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-mono text-white font-bold block">{t.soundEffects}</span>
+                      <span className="text-[10px] font-sans text-white/50 block">Tile clacks, skip alerts & victory chimes</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSettingsSfxEnabled(!settingsSfxEnabled)}
+                      className={`px-3.5 py-1.5 text-xs font-mono font-bold uppercase rounded-md border transition-all cursor-pointer ${
+                        settingsSfxEnabled
+                          ? 'bg-[#006876] border-[#8debfd] text-white shadow-sm'
+                          : 'bg-transparent border-white/10 text-white/40'
+                      }`}
+                    >
+                      {settingsSfxEnabled ? t.sfxOn : t.sfxOff}
                     </button>
                   </div>
 
