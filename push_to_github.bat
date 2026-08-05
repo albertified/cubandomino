@@ -4,17 +4,6 @@ echo   Starting Git Setup and Deployment
 echo ==================================================
 echo.
 
-:: Prompt for custom commit message
-set "COMMIT_MSG=Update website files"
-set /p "USER_MSG=Enter commit message (Press Enter for default: "%COMMIT_MSG%"): "
-
-:: Use custom message if entered
-if not "%USER_MSG%"=="" set "COMMIT_MSG=%USER_MSG%"
-
-echo.
-echo Using commit message: "%COMMIT_MSG%"
-echo.
-
 :: 1. Initialize repository
 echo [1/7] Initializing Git repository...
 git init
@@ -48,7 +37,9 @@ echo [6/7] Staging and committing files...
 git add .
 if errorlevel 1 goto error
 
-git commit -m "%COMMIT_MSG%"
+git commit -m "Update website files"
+:: Note: If there are no changes to commit, Git exits with code 1. 
+:: We ignore that specific error so the script can proceed to push.
 
 :: 7. Push changes upstream
 echo [7/7] Pushing to GitHub...

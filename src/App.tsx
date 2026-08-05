@@ -6,7 +6,7 @@ import {
   ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info, Music,
   Globe, Lock, Search, Eye, Settings, Check, SkipForward
 } from 'lucide-react';
-import { Domino, GameRoom, Player, RoomListItem } from './types';
+import { Domino, GameRoom, GameStatus, Player, RoomListItem } from './types';
 import { DominoBoard } from './components/DominoBoard';
 import { DominoTile } from './components/DominoTile';
 import { CookieDisclosure } from './components/CookieDisclosure';
@@ -167,6 +167,44 @@ class DominoSynth {
       });
     } catch (e) {
       console.warn(e);
+    }
+  }
+
+  // Your turn alert chime (bright warm dual chime)
+  playYourTurn() {
+    if (!this.sfxEnabled) return;
+    try {
+      this.initCtx();
+      const ctx = this.ctx!;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      const now = ctx.currentTime;
+      // Ascending pleasant notification chime: E5 (659.25 Hz) -> A5 (880.00 Hz)
+      const notes = [
+        { freq: 659.25, time: 0, duration: 0.22 },
+        { freq: 880.00, time: 0.07, duration: 0.38 }
+      ];
+
+      notes.forEach(({ freq, time, duration }) => {
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + time);
+
+        gainNode.gain.setValueAtTime(0, now + time);
+        gainNode.gain.linearRampToValueAtTime(0.12, now + time + 0.015);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + time + duration);
+
+        osc.start(now + time);
+        osc.stop(now + time + duration + 0.05);
+      });
+    } catch (e) {
+      console.warn('Play turn sound error', e);
     }
   }
 
@@ -1024,6 +1062,31 @@ export default function App() {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [room?.logs]);
+
+  // Turn sound alert trigger
+  const prevTurnStateRef = useRef<{ turn: number | null; status: GameStatus | null }>({ turn: null, status: null });
+
+  useEffect(() => {
+    if (!room) {
+      prevTurnStateRef.current = { turn: null, status: null };
+      return;
+    }
+
+    const myIndex = room.players.findIndex(p => p && p.id === playerId);
+    const activeSlot = myIndex !== -1 ? myIndex : (playerSlot !== null ? playerSlot : -1);
+
+    if (activeSlot === -1) return;
+
+    const prev = prevTurnStateRef.current;
+    const isMyTurnNow = room.status === 'playing' && room.turn === activeSlot;
+    const wasMyTurn = prev.status === 'playing' && prev.turn === activeSlot;
+
+    if (isMyTurnNow && (!wasMyTurn || prev.status !== 'playing')) {
+      audio.playYourTurn();
+    }
+
+    prevTurnStateRef.current = { turn: room.turn, status: room.status };
+  }, [room?.turn, room?.status, playerSlot, playerId]);
 
   // Actions
   const createRoom = async () => {
