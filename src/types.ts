@@ -22,6 +22,13 @@ export interface Reaction {
   timestamp: number;
 }
 
+export interface RoundHistoryEntry {
+  round: number;
+  scores: [number, number];
+  winnerTeam?: number | null;
+  pointsEarned?: number;
+}
+
 export interface GameRoom {
   roomCode: string;
   status: GameStatus;
@@ -32,6 +39,7 @@ export interface GameRoom {
   hostName?: string;
   hostId?: string;
   scores: [number, number]; // [Team 0 (Slots 0 & 2), Team 1 (Slots 1 & 3)]
+  scoreHistory?: RoundHistoryEntry[];
   players: (Player | null)[];
   board: Domino[]; // Chain of dominoes, oriented such that adjacent tiles match
   firstTileIndex: number; // Index in board[] of the first tile played in the round

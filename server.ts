@@ -275,6 +275,18 @@ function handleRoundWin(room: GameRoom, winnerSlot: number) {
   room.startingTeam = winningTeam; // Winner team gets starting rights on subsequent round!
   room.scoreMultiplier = 1; // Reset multiplier after a win!
 
+  // Record score history entry
+  if (!room.scoreHistory) {
+    room.scoreHistory = [{ round: 0, scores: [0, 0], winnerTeam: null, pointsEarned: 0 }];
+  }
+  const roundNumWin = room.scoreHistory.length;
+  room.scoreHistory.push({
+    round: roundNumWin,
+    scores: [room.scores[0], room.scores[1]],
+    winnerTeam: winningTeam,
+    pointsEarned: totalPoints
+  });
+
   // Crown & Domino Streak logic
   room.lastDominoWinnerSlot = winnerSlot;
   for (let i = 0; i < 4; i++) {
@@ -357,6 +369,17 @@ function handleTrancado(room: GameRoom) {
 
     room.logs.push(`🤝 TIE IN TRANCADO! Both ${pA} (Team A) and ${pB} (Team B) share the lowest hand value of ${minIndividualSum}pts.`);
     room.logs.push(`⚖️ Zero points awarded this round. Next round points will be DOUBLED (${nextMultiplier}x)!`);
+
+    if (!room.scoreHistory) {
+      room.scoreHistory = [{ round: 0, scores: [0, 0], winnerTeam: null, pointsEarned: 0 }];
+    }
+    const roundNumTie = room.scoreHistory.length;
+    room.scoreHistory.push({
+      round: roundNumTie,
+      scores: [room.scores[0], room.scores[1]],
+      winnerTeam: null,
+      pointsEarned: 0
+    });
     return;
   }
 
@@ -378,6 +401,17 @@ function handleTrancado(room: GameRoom) {
   room.status = 'round_ended';
   room.startingTeam = winningTeam; // Winner team gets starting rights on subsequent round!
   room.scoreMultiplier = 1; // Reset multiplier after a win!
+
+  if (!room.scoreHistory) {
+    room.scoreHistory = [{ round: 0, scores: [0, 0], winnerTeam: null, pointsEarned: 0 }];
+  }
+  const roundNumTrancadoWin = room.scoreHistory.length;
+  room.scoreHistory.push({
+    round: roundNumTrancadoWin,
+    scores: [room.scores[0], room.scores[1]],
+    winnerTeam: winningTeam,
+    pointsEarned: totalPoints
+  });
 
   room.logs.push(`🏆 Lowest individual hand: ${winningPlayersList} (${minIndividualSum}pts). Team ${winningTeam === 0 ? 'A' : 'B'} wins the block!`);
   if (multiplier > 1) {
@@ -692,6 +726,7 @@ app.post('/api/rooms', (req, res) => {
     hostName: firstPlayer.name,
     hostId: firstPlayer.id,
     scores: [0, 0],
+    scoreHistory: [{ round: 0, scores: [0, 0], winnerTeam: null, pointsEarned: 0 }],
     players: [firstPlayer, null, null, null],
     board: [],
     firstTileIndex: 0,
@@ -975,6 +1010,7 @@ app.post('/api/rooms/:code/start', (req, res) => {
   // Set up the Starter Selection Phase for the first round of the game
   room.status = 'selecting_starter';
   room.scores = [0, 0];
+  room.scoreHistory = [{ round: 0, scores: [0, 0], winnerTeam: null, pointsEarned: 0 }];
   room.scoreMultiplier = 1;
   room.turnStartedAt = Date.now();
   
@@ -1288,6 +1324,7 @@ app.post('/api/rooms/:code/reset', (req, res) => {
 
   room.status = 'waiting';
   room.scores = [0, 0];
+  room.scoreHistory = [{ round: 0, scores: [0, 0], winnerTeam: null, pointsEarned: 0 }];
   room.scoreMultiplier = 1;
   room.board = [];
   room.firstTileIndex = 0;

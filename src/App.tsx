@@ -4,11 +4,12 @@ import {
   Trophy, Users, Play, Plus, LogOut, RefreshCw, 
   Bot, ShieldAlert, Sparkles, Send, Clock, HelpCircle, 
   ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info, Music,
-  Globe, Lock, Search, Eye, Settings, Check, SkipForward
+  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp
 } from 'lucide-react';
 import { Domino, GameRoom, GameStatus, Player, RoomListItem } from './types';
 import { DominoBoard } from './components/DominoBoard';
 import { DominoTile } from './components/DominoTile';
+import { ScoreHistoryChart } from './components/ScoreHistoryChart';
 import { CookieDisclosure } from './components/CookieDisclosure';
 import { RulesAndSeoSection } from './components/RulesAndSeoSection';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
@@ -638,6 +639,7 @@ export default function App() {
   const [reactionCooldown, setReactionCooldown] = useState<number>(0);
 
   // Board & Ficha Custom Themes
+  const [sidebarTab, setSidebarTab] = useState<'logs' | 'graph'>('logs');
   const [boardTheme, setBoardTheme] = useState<BoardThemeId>(() => {
     return (localStorage.getItem('cuban_dominoes_board_theme') as BoardThemeId) || 'havana';
   });
@@ -3428,34 +3430,69 @@ export default function App() {
               </div>
             )}
 
-            {/* Live activity console */}
+            {/* Live activity console & Point History Graph */}
             <div className="flex-1 p-6 flex flex-col overflow-hidden gap-3 min-h-[250px]">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 flex items-center gap-1.5 pb-2 border-b border-white/5">
-                <Clock className="w-4 h-4 text-[#fbbf24]" />
-                TABLE CONSOLE LOG
-              </span>
-              <div 
-                ref={logContainerRef}
-                className="flex-1 overflow-y-auto space-y-2.5 font-mono text-xs text-white/50 pr-2 scrollbar-thin"
-              >
-                {room.logs.map((log, idx) => {
-                  let color = 'text-white/40';
-                  if (log.includes('DOMINO!') || log.includes('🏆')) {
-                    color = 'text-[#fbbf24] font-semibold';
-                  } else if (log.includes('🎲') || log.includes('🟢')) {
-                    color = 'text-teal-400';
-                  } else if (log.includes('⚠️')) {
-                    color = 'text-amber-500/90';
-                  } else if (log.includes('---')) {
-                    color = 'text-white/20 text-center border-t border-b border-white/5 py-1.5 my-2.5';
-                  }
-                  return (
-                    <div key={idx} className={`${color} leading-relaxed break-words text-[11px]`}>
-                      {log}
-                    </div>
-                  );
-                })}
+              <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                <div className="flex items-center gap-1.5 bg-[#111113] p-1 rounded-lg border border-white/5">
+                  <button
+                    onClick={() => setSidebarTab('logs')}
+                    className={`text-[10px] font-mono uppercase tracking-wider flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                      sidebarTab === 'logs' ? 'bg-white/10 text-white font-bold' : 'text-white/40 hover:text-white/70'
+                    }`}
+                  >
+                    <Clock className="w-3 h-3 text-[#fbbf24]" />
+                    Log
+                  </button>
+                  <button
+                    onClick={() => setSidebarTab('graph')}
+                    className={`text-[10px] font-mono uppercase tracking-wider flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer relative ${
+                      sidebarTab === 'graph' ? 'bg-white/10 text-white font-bold' : 'text-white/40 hover:text-white/70'
+                    } ${room.status === 'game_over' ? 'text-[#fbbf24] font-bold' : ''}`}
+                  >
+                    <TrendingUp className="w-3 h-3 text-teal-400" />
+                    Point Graph
+                    {room.status === 'game_over' && (
+                      <span className="w-2 h-2 rounded-full bg-[#fbbf24] animate-ping" />
+                    )}
+                  </button>
+                </div>
               </div>
+
+              {sidebarTab === 'logs' ? (
+                <div 
+                  ref={logContainerRef}
+                  className="flex-1 overflow-y-auto space-y-2.5 font-mono text-xs text-white/50 pr-2 scrollbar-thin"
+                >
+                  {room.logs.map((log, idx) => {
+                    let color = 'text-white/40';
+                    if (log.includes('DOMINO!') || log.includes('🏆')) {
+                      color = 'text-[#fbbf24] font-semibold';
+                    } else if (log.includes('🎲') || log.includes('🟢')) {
+                      color = 'text-teal-400';
+                    } else if (log.includes('⚠️')) {
+                      color = 'text-amber-500/90';
+                    } else if (log.includes('---')) {
+                      color = 'text-white/20 text-center border-t border-b border-white/5 py-1.5 my-2.5';
+                    }
+                    return (
+                      <div key={idx} className={`${color} leading-relaxed break-words text-[11px]`}>
+                        {log}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto scrollbar-thin py-1">
+                  <ScoreHistoryChart
+                    compact
+                    scoreHistory={room.scoreHistory}
+                    targetScore={room.targetScore}
+                    teamAName="Team A"
+                    teamBName="Team B"
+                    currentScores={room.scores}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Game controls / stats */}
@@ -3568,16 +3605,16 @@ export default function App() {
               initial={{ scale: 0.96, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.96, opacity: 0 }}
-              className="w-full max-w-md bg-[#1c1c1f] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-6 text-center"
+              className="w-full max-w-xl bg-[#1c1c1f] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-6 text-center max-h-[90vh] overflow-y-auto scrollbar-thin"
             >
               <div className="space-y-2">
-                <div className="w-20 h-20 rounded-full bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-4xl flex items-center justify-center mx-auto text-[#fbbf24]">
+                <div className="w-16 h-16 rounded-full bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-3xl flex items-center justify-center mx-auto text-[#fbbf24]">
                   🏆
                 </div>
                 <h3 className="text-2xl font-display font-extrabold tracking-tight text-white uppercase">
                   Match Victory!
                 </h3>
-                <p className="text-[10px] font-mono tracking-widest uppercase text-white/40">Full Match Recaps</p>
+                <p className="text-[10px] font-mono tracking-widest uppercase text-white/40">Full Match Recap & Point History</p>
               </div>
 
               <div className="bg-[#111113] p-4 rounded-xl border border-white/5 space-y-4 text-left">
@@ -3607,6 +3644,17 @@ export default function App() {
                       </span>
                     )}
                   </div>
+                </div>
+
+                {/* Animated Line Graph Component */}
+                <div className="pt-2">
+                  <ScoreHistoryChart
+                    scoreHistory={room.scoreHistory}
+                    targetScore={room.targetScore}
+                    teamAName="Team A"
+                    teamBName="Team B"
+                    currentScores={room.scores}
+                  />
                 </div>
               </div>
 
