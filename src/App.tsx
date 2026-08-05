@@ -4,7 +4,7 @@ import {
   Trophy, Users, Play, Plus, LogOut, RefreshCw, 
   Bot, ShieldAlert, Sparkles, Send, Clock, HelpCircle, 
   ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info, Music,
-  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp
+  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2
 } from 'lucide-react';
 import { Domino, GameRoom, GameStatus, Player, RoomListItem } from './types';
 import { DominoBoard } from './components/DominoBoard';
@@ -15,6 +15,7 @@ import { RulesAndSeoSection } from './components/RulesAndSeoSection';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { TermsOfServicePage } from './components/TermsOfServicePage';
 import { ContactAboutPage } from './components/ContactAboutPage';
+import { InviteModal } from './components/InviteModal';
 import { translations, Language } from './translations';
 import { BoardThemeId, FichaThemeId, BOARD_THEMES, FICHA_THEMES, MATCHED_PRESETS } from './utils/themes';
 
@@ -627,6 +628,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [showRules, setShowRules] = useState<boolean>(false);
+  const [showInviteModal, setShowInviteModal] = useState<boolean>(false);
+  const [invitedRoomCode, setInvitedRoomCode] = useState<string | null>(null);
   const [musicEnabled, setMusicEnabled] = useState<boolean>(() => {
     return localStorage.getItem('cuban_dominoes_music_enabled') !== 'false';
   });
@@ -968,6 +971,27 @@ export default function App() {
       setLoadingPublicRooms(false);
     }
   };
+
+  // Check for direct room invite code in URL query params on initial mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const codeFromUrl = params.get('room') || params.get('join') || params.get('code');
+    if (codeFromUrl) {
+      const clean = codeFromUrl.trim().toUpperCase();
+      if (clean) {
+        setJoiningCode(clean);
+        setInvitedRoomCode(clean);
+        setLobbyTab('join');
+      }
+    }
+  }, []);
+
+  // Auto-join if player has a saved name and arrived via invite URL
+  useEffect(() => {
+    if (hasName && invitedRoomCode && !roomCode && !loading) {
+      joinRoom(invitedRoomCode);
+    }
+  }, [hasName, invitedRoomCode]);
 
   // Auto-poll public rooms directory when on lobby screen
   useEffect(() => {
@@ -1674,6 +1698,12 @@ export default function App() {
                 </div>
                 <h2 className="text-2xl font-display font-black tracking-tight text-[#1d1c13] uppercase">PLAYER PROFILE</h2>
                 <p className="text-sm font-serif italic text-[#504440]">Enter your seat identifier to join the domino table.</p>
+                {invitedRoomCode && (
+                  <div className="bg-[#006876]/15 border border-[#006876]/40 rounded-lg p-3 text-xs font-mono text-[#006876] font-bold flex items-center justify-center gap-2 mt-2">
+                    <Sparkles className="w-4 h-4 text-[#fe7328]" />
+                    <span>Invited to Room: <strong className="text-[#fe7328] font-black text-sm">{invitedRoomCode}</strong></span>
+                  </div>
+                )}
               </div>
 
               <form onSubmit={(e) => {
@@ -2312,6 +2342,15 @@ export default function App() {
               >
                 <HelpCircle className="w-5 h-5 text-[#fe7328]" />
               </button>
+
+              {/* Invite Link & QR Switch */}
+              <button 
+                onClick={() => setShowInviteModal(true)}
+                className="p-3 rounded-md bg-[#200d07] border border-[#fe7328]/60 text-[#fe7328] hover:bg-[#fe7328]/20 transition-all cursor-pointer"
+                title="Invite Players via Link / QR Code"
+              >
+                <QrCode className="w-5 h-5 text-[#fe7328]" />
+              </button>
             </div>
 
             <button
@@ -2379,6 +2418,15 @@ export default function App() {
                   </span>
                 )}
 
+                <button
+                  onClick={() => setShowInviteModal(true)}
+                  className="px-3 py-1.5 bg-[#fe7328]/15 hover:bg-[#fe7328]/25 border border-[#fe7328]/40 text-[#fe7328] hover:text-white rounded-md text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm ml-1"
+                  title="Share 1-click invite link or QR code"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-[#fe7328]" />
+                  <span className="hidden sm:inline">Invite QR & Link</span>
+                </button>
+
                 <button 
                   onClick={openSettingsModal}
                   className="p-1.5 rounded bg-[#200d07] border border-[#006876] text-[#8debfd] hover:bg-[#006876]/30 transition-all cursor-pointer"
@@ -2421,8 +2469,18 @@ export default function App() {
                         Turn Timer: <span className="text-white">{room.turnTimer ? `${room.turnTimer} SEC` : 'OFF'}</span>
                       </span>
                     </div>
-                    <div className="text-[11px] font-mono font-bold text-[#83746f] uppercase">
-                      Room Code: <span className="text-[#fe7328] font-extrabold">{room.roomCode}</span>
+                    <div className="flex items-center gap-3">
+                      <div className="text-[11px] font-mono font-bold text-[#83746f] uppercase">
+                        Room Code: <span className="text-[#fe7328] font-extrabold">{room.roomCode}</span>
+                      </div>
+                      <button
+                        onClick={() => setShowInviteModal(true)}
+                        className="px-2.5 py-1 bg-[#fe7328]/15 hover:bg-[#fe7328]/30 border border-[#fe7328]/50 text-[#fe7328] hover:text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                        title="Open One-Click Invite Link & QR Code"
+                      >
+                        <QrCode className="w-3.5 h-3.5" />
+                        <span>Invite Link & QR</span>
+                      </button>
                     </div>
                   </div>
 
@@ -4235,6 +4293,15 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* QR Code & Invite Link Modal */}
+      <InviteModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        roomCode={roomCode || joiningCode}
+        hostName={room?.players.find(p => p?.isHost || p?.id === room?.hostId)?.name}
+        targetScore={room?.targetScore}
+      />
 
       {/* CCPA Cookie Disclosure Banner & Settings Modal */}
       <CookieDisclosure 
