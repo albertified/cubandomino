@@ -972,6 +972,12 @@ export default function App() {
     }
   };
 
+  const clearUrlParams = () => {
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  };
+
   // Check for direct room invite code in URL query params on initial mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -1020,6 +1026,8 @@ export default function App() {
           setRoom(null);
           setRoomCode('');
           setPlayerSlot(null);
+          setInvitedRoomCode(null);
+          clearUrlParams();
         }
         return;
       }
@@ -1135,6 +1143,8 @@ export default function App() {
       setRoom(data.room);
       setRoomCode(data.room.roomCode);
       setPlayerSlot(data.playerSlot);
+      setInvitedRoomCode(null);
+      clearUrlParams();
     } catch (err: any) {
       setError(err.message || 'Error creating room');
     } finally {
@@ -1169,6 +1179,8 @@ export default function App() {
       setRoom(data.room);
       setRoomCode(data.room.roomCode);
       setPlayerSlot(data.playerSlot);
+      setInvitedRoomCode(null);
+      clearUrlParams();
     } catch (err: any) {
       setError(err.message || 'Error joining room');
     } finally {
@@ -1212,6 +1224,8 @@ export default function App() {
         setRoom(null);
         setRoomCode('');
         setPlayerSlot(null);
+        setInvitedRoomCode(null);
+        clearUrlParams();
       } else {
         setRoom(data.room);
       }
@@ -1459,6 +1473,9 @@ export default function App() {
     setSelectedTileIndex(null);
     setPendingPlaySides(null);
     setSelectedLocalIdx(null);
+    setInvitedRoomCode(null);
+    setJoiningCode('');
+    clearUrlParams();
   };
 
   const isHost = useMemo(() => {
