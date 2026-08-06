@@ -915,6 +915,15 @@ app.post('/api/rooms/:code/remove-slot', (req, res) => {
     return res.status(403).json({ error: 'Only the lobby host can kick other players.' });
   }
 
+  // If the target player being removed is the HOST, or if the host leaves / closes the lobby:
+  // The lobby gets completely closed and deleted from the public server directory, kicking everyone.
+  if (targetPlayer.id === room.hostId || (isHost && isSelf)) {
+    clearBotTimer(code);
+    clearStarterTimer(code);
+    rooms.delete(code);
+    return res.json({ message: 'Lobby closed and deleted by host', roomClosed: true });
+  }
+
   const actionVerb = isSelf ? 'left the table' : 'was removed from the table by the host';
   room.logs.push(`🚪 ${targetPlayer.name} ${actionVerb}.`);
   room.players[targetSlot] = null;
@@ -924,22 +933,36 @@ app.post('/api/rooms/:code/remove-slot', (req, res) => {
 
   if (remainingHumans.length === 0) {
     // Automatically close lobbies that have zero human players
+    clearBotTimer(code);
+    clearStarterTimer(code);
     rooms.delete(code);
     return res.json({ message: 'Room closed (no human players remaining)', roomClosed: true });
   }
 
-  // If host was removed/left, reassign host to the first remaining human player
-  if (targetPlayer.id === room.hostId) {
-    const nextHost = remainingHumans[0];
-    if (nextHost) {
-      room.hostId = nextHost.id;
-      room.hostName = nextHost.name;
-      room.logs.push(`👑 ${nextHost.name} is now the table host.`);
-    }
-  }
-
   room.lastUpdateTime = Date.now();
   res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
+});
+
+// Close / Disband Room (Host only)
+app.post('/api/rooms/:code/close', (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const requesterId = sanitizeId(req.body?.requesterId || req.body?.playerId);
+  const room = rooms.get(code);
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  const isHost = room.hostId ? room.hostId === requesterId : requesterId === room.players[0]?.id;
+  if (!isHost) {
+    return res.status(403).json({ error: 'Only the lobby host can close the lobby.' });
+  }
+
+  clearBotTimer(code);
+  clearStarterTimer(code);
+  rooms.delete(code);
+
+  res.json({ message: 'Lobby closed and deleted by host', roomClosed: true });
 });
 
 // Store active starter reveal timers per room code

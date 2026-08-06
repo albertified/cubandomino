@@ -4,7 +4,7 @@ import {
   Trophy, Users, Play, Plus, LogOut, RefreshCw, 
   Bot, ShieldAlert, Sparkles, Send, Clock, HelpCircle, 
   ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info, Music,
-  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2
+  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2, Maximize2
 } from 'lucide-react';
 import { Domino, GameRoom, GameStatus, Player, RoomListItem } from './types';
 import { DominoBoard } from './components/DominoBoard';
@@ -629,7 +629,13 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(false);
   const [showRules, setShowRules] = useState<boolean>(false);
   const [showInviteModal, setShowInviteModal] = useState<boolean>(false);
+  const [inviteInitialBigMode, setInviteInitialBigMode] = useState<boolean>(false);
   const [invitedRoomCode, setInvitedRoomCode] = useState<string | null>(null);
+
+  const openInviteModal = (bigMode: boolean = false) => {
+    setInviteInitialBigMode(bigMode);
+    setShowInviteModal(true);
+  };
   const [musicEnabled, setMusicEnabled] = useState<boolean>(() => {
     return localStorage.getItem('cuban_dominoes_music_enabled') !== 'false';
   });
@@ -1022,7 +1028,7 @@ export default function App() {
       const response = await fetch(`/api/rooms/${codeToPoll}?playerId=${encodeURIComponent(playerId)}`);
       if (!response.ok) {
         if (response.status === 404) {
-          setError('Room was closed or inactive.');
+          setError('The lobby host has closed the game. Everyone was returned to the main menu.');
           setRoom(null);
           setRoomCode('');
           setPlayerSlot(null);
@@ -1456,15 +1462,23 @@ export default function App() {
   };
  
   const exitRoom = async () => {
-    if (roomCode && playerSlot !== null) {
+    if (roomCode) {
       try {
-        await fetch(`/api/rooms/${roomCode}/remove-slot`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slot: playerSlot, requesterId: playerId }),
-        });
+        if (isHost) {
+          await fetch(`/api/rooms/${roomCode}/close`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requesterId: playerId, playerId }),
+          });
+        } else if (playerSlot !== null) {
+          await fetch(`/api/rooms/${roomCode}/remove-slot`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slot: playerSlot, requesterId: playerId }),
+          });
+        }
       } catch (err) {
-        console.error('Error removing slot on exit:', err);
+        console.error('Error exiting or closing room:', err);
       }
     }
     setRoom(null);
@@ -2436,12 +2450,21 @@ export default function App() {
                 )}
 
                 <button
-                  onClick={() => setShowInviteModal(true)}
+                  onClick={() => openInviteModal(false)}
                   className="px-3 py-1.5 bg-[#fe7328]/15 hover:bg-[#fe7328]/25 border border-[#fe7328]/40 text-[#fe7328] hover:text-white rounded-md text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm ml-1"
                   title="Share 1-click invite link or QR code"
                 >
                   <QrCode className="w-3.5 h-3.5 text-[#fe7328]" />
                   <span className="hidden sm:inline">Invite QR & Link</span>
+                </button>
+
+                <button
+                  onClick={() => openInviteModal(true)}
+                  className="px-2.5 py-1.5 bg-yellow-400/20 hover:bg-yellow-400/30 border border-yellow-400/50 text-yellow-300 hover:text-white rounded-md text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                  title="Open Big High-Contrast Code Mode for across-the-room viewing"
+                >
+                  <Maximize2 className="w-3.5 h-3.5 text-yellow-400" />
+                  <span className="hidden md:inline font-black">BIG MODE</span>
                 </button>
 
                 <button 
@@ -2491,12 +2514,21 @@ export default function App() {
                         Room Code: <span className="text-[#fe7328] font-extrabold">{room.roomCode}</span>
                       </div>
                       <button
-                        onClick={() => setShowInviteModal(true)}
+                        onClick={() => openInviteModal(false)}
                         className="px-2.5 py-1 bg-[#fe7328]/15 hover:bg-[#fe7328]/30 border border-[#fe7328]/50 text-[#fe7328] hover:text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                         title="Open One-Click Invite Link & QR Code"
                       >
                         <QrCode className="w-3.5 h-3.5" />
                         <span>Invite Link & QR</span>
+                      </button>
+
+                      <button
+                        onClick={() => openInviteModal(true)}
+                        className="px-2.5 py-1 bg-yellow-400/20 hover:bg-yellow-400/35 border border-yellow-400/60 text-yellow-300 hover:text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm font-black"
+                        title="Open High-Contrast Big Mode"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5 text-yellow-400" />
+                        <span>BIG MODE</span>
                       </button>
                     </div>
                   </div>
@@ -2594,9 +2626,18 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-                      {isHost && (
+                    <div className="flex items-center gap-3 w-full sm:w-auto justify-end flex-wrap">
+                      {isHost ? (
                         <>
+                          <button
+                            onClick={exitRoom}
+                            className="px-4 py-3 rounded-xl bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 text-red-300 font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer uppercase font-mono shadow"
+                            title="Close and delete lobby completely for everyone"
+                          >
+                            <LogOut className="w-4 h-4 text-red-400" />
+                            Close Lobby
+                          </button>
+
                           <button
                             onClick={addBot}
                             disabled={room.players.filter(p => p !== null).length === 4}
@@ -2614,6 +2655,15 @@ export default function App() {
                             {t.startGameBtn}
                           </button>
                         </>
+                      ) : (
+                        <button
+                          onClick={exitRoom}
+                          className="px-4 py-3 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-800/40 text-red-300 font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer uppercase font-mono shadow"
+                          title="Leave this table"
+                        >
+                          <LogOut className="w-4 h-4 text-red-400" />
+                          Leave Lobby
+                        </button>
                       )}
                     </div>
                   </div>
@@ -4274,6 +4324,7 @@ export default function App() {
         roomCode={roomCode || joiningCode}
         hostName={room?.players.find(p => p?.isHost || p?.id === room?.hostId)?.name}
         targetScore={room?.targetScore}
+        initialBigMode={inviteInitialBigMode}
       />
 
       {/* CCPA Cookie Disclosure Banner & Settings Modal */}
