@@ -3334,50 +3334,6 @@ export default function App() {
                                     isItemDragging ? 'shadow-2xl' : ''
                                   }`}
                                 />
-                                
-                                {/* Control buttons absolutely positioned under each tile within padding area */}
-                                <div 
-                                  className={`absolute bottom-[-32px] left-1/2 -translate-x-1/2 z-20 flex items-center justify-between gap-1 px-1 py-0.5 rounded-md bg-[#111113]/95 border border-white/10 transition-all duration-200 shadow-xl w-[95px] ${
-                                    isSelected 
-                                      ? 'opacity-100 scale-100 pointer-events-auto' 
-                                      : 'opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto'
-                                  }`}
-                                >
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveLeft(idx);
-                                    }}
-                                    disabled={idx === 0}
-                                    className="p-1 rounded bg-[#1c1c1f] hover:bg-[#fbbf24] text-white/60 hover:text-slate-950 disabled:opacity-20 transition-all cursor-pointer"
-                                    title="Move Left (ArrowLeft / A)"
-                                  >
-                                    <ArrowLeft className="w-2.5 h-2.5" />
-                                  </button>
-
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      flipTile(idx);
-                                    }}
-                                    className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-[#1c1c1f] hover:bg-[#fbbf24] text-white/60 hover:text-slate-950 transition-all cursor-pointer"
-                                    title="Flip Tile (Space / F)"
-                                  >
-                                    FLIP
-                                  </button>
-
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveRight(idx);
-                                    }}
-                                    disabled={idx === localHand.length - 1}
-                                    className="p-1 rounded bg-[#1c1c1f] hover:bg-[#fbbf24] text-white/60 hover:text-slate-950 disabled:opacity-20 transition-all cursor-pointer"
-                                    title="Move Right (ArrowRight / D)"
-                                  >
-                                    <ArrowRight className="w-2.5 h-2.5" />
-                                  </button>
-                                </div>
                               </div>
                             </Reorder.Item>
                           );
