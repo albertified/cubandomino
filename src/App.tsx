@@ -3008,9 +3008,12 @@ export default function App() {
                       const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
                       const ratio = (isTurn && tVal > 0) ? Math.max(0, Math.min(1, remSec / tVal)) : 1;
 
+                      const isBot = player?.type === 'bot';
+                      const botDiff = player?.botDifficulty || room.defaultBotDifficulty || 'intermediate';
+
                       return (
                         <div className="absolute top-2 left-1/2 transform -translate-x-1/2 z-30 flex flex-col items-center">
-                          <div className={`px-4 py-2 rounded-xl border flex items-center gap-2 transition-all shadow-xl ${
+                          <div className={`px-3.5 py-1.5 rounded-xl border flex items-center gap-2 transition-all shadow-xl ${
                             isCrown && isTurn
                               ? 'bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 border-amber-200 text-slate-950 scale-105 shadow-xl shadow-amber-400/30 ring-2 ring-amber-300 font-bold'
                               : isCrown
@@ -3020,25 +3023,35 @@ export default function App() {
                                   : 'bg-[#1c1c1f] border-white/5 text-white/90'
                           }`}>
                             {isCrown && (
-                              <span className="text-sm cursor-help" title="Last Domino Winner 👑">👑</span>
+                              <span className="text-sm cursor-help shrink-0" title="Last Domino Winner 👑">👑</span>
                             )}
                             {streak > 1 && (
-                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>
+                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse shrink-0" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>
                             )}
-                            <span className="text-xs font-bold leading-none flex items-center gap-1 truncate max-w-[120px]">
-                              {player?.name || `Seat ${idx + 1}`}
-                              <span className={`text-[8px] px-1.5 py-0.2 rounded-md uppercase font-sans font-black ${(isTurn || isCrown) ? 'bg-[#111113] text-[#fbbf24]' : 'bg-teal-500 text-slate-950'}`}>PARTNER</span>
-                              {player?.type === 'bot' && (
-                                <span className="text-[8px] px-1 py-0.2 rounded font-mono font-black uppercase bg-[#111113]/20 border border-current shrink-0">
-                                  {(player.botDifficulty || room.defaultBotDifficulty) === 'pro' ? '🧠 PRO' : (player.botDifficulty || room.defaultBotDifficulty) === 'novice' ? '🎲 NOV' : '⚡ INT'}
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-xs font-bold leading-none truncate max-w-[110px] inline-block">
+                                {player?.name || `Seat ${idx + 1}`}
+                              </span>
+                              <span className={`text-[8px] px-1.5 py-0.5 rounded-md uppercase font-sans font-black shrink-0 whitespace-nowrap ${(isTurn || isCrown) ? 'bg-[#111113] text-[#fbbf24]' : 'bg-teal-500 text-slate-950'}`}>PARTNER</span>
+                              {isBot && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-mono font-extrabold uppercase border shrink-0 whitespace-nowrap ${
+                                  (isTurn || isCrown)
+                                    ? 'bg-[#111113] text-purple-300 border-[#111113]'
+                                    : botDiff === 'pro'
+                                      ? 'bg-purple-950/90 text-purple-300 border-purple-400/50'
+                                      : botDiff === 'novice'
+                                        ? 'bg-emerald-950/90 text-emerald-300 border-emerald-400/50'
+                                        : 'bg-amber-950/90 text-amber-300 border-amber-400/50'
+                                }`}>
+                                  {botDiff === 'pro' ? '🧠 PRO' : botDiff === 'novice' ? '🎲 NOV' : '⚡ INT'}
                                 </span>
                               )}
-                            </span>
-                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90 font-bold' : 'bg-[#111113] text-white/40'}`}>
+                            </div>
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90 font-bold' : 'bg-[#111113] text-white/40'}`}>
                               🀰 {player?.hand.length || 0}
                             </span>
                             {isTurn && tVal > 0 && (
-                              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${remSec <= 5 ? 'bg-red-600 text-white animate-pulse' : remSec <= 10 ? 'bg-amber-500 text-slate-950' : 'bg-[#111113] text-[#fbbf24]'}`}>
+                              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0 flex items-center gap-1 ${remSec <= 5 ? 'bg-red-600 text-white animate-pulse' : remSec <= 10 ? 'bg-amber-500 text-slate-950' : 'bg-[#111113] text-[#fbbf24]'}`}>
                                 ⏱️ {remSec}s
                               </span>
                             )}
@@ -3072,9 +3085,12 @@ export default function App() {
                       const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
                       const ratio = (isTurn && tVal > 0) ? Math.max(0, Math.min(1, remSec / tVal)) : 1;
 
+                      const isBot = player?.type === 'bot';
+                      const botDiff = player?.botDifficulty || room.defaultBotDifficulty || 'intermediate';
+
                       return (
                         <div className="absolute left-2 top-1/2 transform -translate-y-1/2 z-30 flex flex-col items-center">
-                          <div className={`px-4 py-2 rounded-xl border flex flex-col items-center gap-1 transition-all shadow-xl ${
+                          <div className={`px-3.5 py-1.5 rounded-xl border flex flex-col items-center gap-1 transition-all shadow-xl ${
                             isCrown && isTurn
                               ? 'bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 border-amber-200 text-slate-950 scale-105 shadow-xl shadow-amber-400/30 ring-2 ring-amber-300 font-bold'
                               : isCrown
@@ -3083,19 +3099,27 @@ export default function App() {
                                   ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] scale-105 shadow-[#fbbf24]/10' 
                                   : 'bg-[#1c1c1f] border-white/5 text-white/90'
                           }`}>
-                            <div className="flex items-center gap-1">
-                              {isCrown && <span className="text-sm cursor-help" title="Last Domino Winner 👑">👑</span>}
-                              {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
-                              <span className="text-xs font-bold leading-none truncate max-w-[110px] flex items-center gap-1">
-                                <span>{player?.name || `Seat ${idx + 1}`}</span>
-                                {player?.type === 'bot' && (
-                                  <span className="text-[8px] px-1 py-0.2 rounded font-mono font-black uppercase bg-[#111113]/20 border border-current shrink-0">
-                                    {(player.botDifficulty || room.defaultBotDifficulty) === 'pro' ? '🧠 PRO' : (player.botDifficulty || room.defaultBotDifficulty) === 'novice' ? '🎲 NOV' : '⚡ INT'}
-                                  </span>
-                                )}
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {isCrown && <span className="text-sm cursor-help shrink-0" title="Last Domino Winner 👑">👑</span>}
+                              {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse shrink-0" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
+                              <span className="text-xs font-bold leading-none truncate max-w-[100px] inline-block">
+                                {player?.name || `Seat ${idx + 1}`}
                               </span>
+                              {isBot && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-mono font-extrabold uppercase border shrink-0 whitespace-nowrap ${
+                                  (isTurn || isCrown)
+                                    ? 'bg-[#111113] text-purple-300 border-[#111113]'
+                                    : botDiff === 'pro'
+                                      ? 'bg-purple-950/90 text-purple-300 border-purple-400/50'
+                                      : botDiff === 'novice'
+                                        ? 'bg-emerald-950/90 text-emerald-300 border-emerald-400/50'
+                                        : 'bg-amber-950/90 text-amber-300 border-amber-400/50'
+                                }`}>
+                                  {botDiff === 'pro' ? '🧠 PRO' : botDiff === 'novice' ? '🎲 NOV' : '⚡ INT'}
+                                </span>
+                              )}
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5 shrink-0">
                               <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90 font-bold' : 'bg-[#111113] text-white/40'}`}>
                                 🀰 {player?.hand.length || 0}
                               </span>
@@ -3135,9 +3159,12 @@ export default function App() {
                       const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
                       const ratio = (isTurn && tVal > 0) ? Math.max(0, Math.min(1, remSec / tVal)) : 1;
 
+                      const isBot = player?.type === 'bot';
+                      const botDiff = player?.botDifficulty || room.defaultBotDifficulty || 'intermediate';
+
                       return (
                         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 z-30 flex flex-col items-center">
-                          <div className={`px-4 py-2 rounded-xl border flex flex-col items-center gap-1 transition-all shadow-xl ${
+                          <div className={`px-3.5 py-1.5 rounded-xl border flex flex-col items-center gap-1 transition-all shadow-xl ${
                             isCrown && isTurn
                               ? 'bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 border-amber-200 text-slate-950 scale-105 shadow-xl shadow-amber-400/30 ring-2 ring-amber-300 font-bold'
                               : isCrown
@@ -3146,19 +3173,27 @@ export default function App() {
                                   ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] scale-105 shadow-[#fbbf24]/10' 
                                   : 'bg-[#1c1c1f] border-white/5 text-white/90'
                           }`}>
-                            <div className="flex items-center gap-1">
-                              {isCrown && <span className="text-sm cursor-help" title="Last Domino Winner 👑">👑</span>}
-                              {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
-                              <span className="text-xs font-bold leading-none truncate max-w-[110px] flex items-center gap-1">
-                                <span>{player?.name || `Seat ${idx + 1}`}</span>
-                                {player?.type === 'bot' && (
-                                  <span className="text-[8px] px-1 py-0.2 rounded font-mono font-black uppercase bg-[#111113]/20 border border-current shrink-0">
-                                    {(player.botDifficulty || room.defaultBotDifficulty) === 'pro' ? '🧠 PRO' : (player.botDifficulty || room.defaultBotDifficulty) === 'novice' ? '🎲 NOV' : '⚡ INT'}
-                                  </span>
-                                )}
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {isCrown && <span className="text-sm cursor-help shrink-0" title="Last Domino Winner 👑">👑</span>}
+                              {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse shrink-0" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
+                              <span className="text-xs font-bold leading-none truncate max-w-[100px] inline-block">
+                                {player?.name || `Seat ${idx + 1}`}
                               </span>
+                              {isBot && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-mono font-extrabold uppercase border shrink-0 whitespace-nowrap ${
+                                  (isTurn || isCrown)
+                                    ? 'bg-[#111113] text-purple-300 border-[#111113]'
+                                    : botDiff === 'pro'
+                                      ? 'bg-purple-950/90 text-purple-300 border-purple-400/50'
+                                      : botDiff === 'novice'
+                                        ? 'bg-emerald-950/90 text-emerald-300 border-emerald-400/50'
+                                        : 'bg-amber-950/90 text-amber-300 border-amber-400/50'
+                                }`}>
+                                  {botDiff === 'pro' ? '🧠 PRO' : botDiff === 'novice' ? '🎲 NOV' : '⚡ INT'}
+                                </span>
+                              )}
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5 shrink-0">
                               <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90 font-bold' : 'bg-[#111113] text-white/40'}`}>
                                 🀰 {player?.hand.length || 0}
                               </span>
@@ -3393,9 +3428,12 @@ export default function App() {
 
                       if (!targetPlayer) return null;
 
+                      const isBot = targetPlayer.type === 'bot';
+                      const botDiff = targetPlayer.botDifficulty || room.defaultBotDifficulty || 'intermediate';
+
                       return (
                         <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 z-30 flex flex-col items-center">
-                          <div className={`px-4 py-2 rounded-xl border flex items-center gap-2 transition-all shadow-xl ${
+                          <div className={`px-3.5 py-1.5 rounded-xl border flex items-center gap-2 transition-all shadow-xl ${
                             isCrown && isTurn
                               ? 'bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 border-amber-200 text-slate-950 ring-4 ring-amber-300/40 scale-105 font-bold'
                               : isCrown
@@ -3404,25 +3442,38 @@ export default function App() {
                                   ? 'bg-[#fbbf24] border-[#fbbf24] text-[#111113] ring-4 ring-[#fbbf24]/30 scale-105' 
                                   : 'bg-[#1c1c1f] border-white/5 text-white/90'
                           }`}>
-                            {isCrown && <span className="text-sm cursor-help" title="Last Domino Winner 👑">👑</span>}
-                            {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
-                            <div className="flex flex-col">
-                              <span className="text-xs font-bold leading-none flex items-center gap-1">
-                                {targetPlayer.type === 'bot' ? '🤖' : '👤'} {targetPlayer.name}
-                                {playerSlot === targetSlot ? (
-                                  <span className={`text-[8px] px-1 py-0.2 rounded-md uppercase font-sans font-black ${(isTurn || isCrown) ? 'bg-[#111113] text-[#fbbf24]' : 'bg-[#fbbf24] text-[#111113]'}`}>YOU</span>
-                                ) : (
-                                  <span className="text-[8px] px-1 py-0.2 rounded-md uppercase font-mono bg-white/10 text-white/60">
-                                    Slot {targetSlot + 1}
-                                  </span>
-                                )}
+                            {isCrown && <span className="text-sm cursor-help shrink-0" title="Last Domino Winner 👑">👑</span>}
+                            {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse shrink-0" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-xs font-bold leading-none truncate max-w-[110px] inline-block">
+                                {isBot ? '🤖 ' : '👤 '}{targetPlayer.name}
                               </span>
+                              {playerSlot === targetSlot ? (
+                                <span className={`text-[8px] px-1.5 py-0.5 rounded-md uppercase font-sans font-black shrink-0 whitespace-nowrap ${(isTurn || isCrown) ? 'bg-[#111113] text-[#fbbf24]' : 'bg-[#fbbf24] text-[#111113]'}`}>YOU</span>
+                              ) : (
+                                <span className="text-[8px] px-1 py-0.5 rounded-md uppercase font-mono bg-white/10 text-white/60 shrink-0 whitespace-nowrap">
+                                  Slot {targetSlot + 1}
+                                </span>
+                              )}
+                              {isBot && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-mono font-extrabold uppercase border shrink-0 whitespace-nowrap ${
+                                  (isTurn || isCrown)
+                                    ? 'bg-[#111113] text-purple-300 border-[#111113]'
+                                    : botDiff === 'pro'
+                                      ? 'bg-purple-950/90 text-purple-300 border-purple-400/50'
+                                      : botDiff === 'novice'
+                                        ? 'bg-emerald-950/90 text-emerald-300 border-emerald-400/50'
+                                        : 'bg-amber-950/90 text-amber-300 border-amber-400/50'
+                                }`}>
+                                  {botDiff === 'pro' ? '🧠 PRO' : botDiff === 'novice' ? '🎲 NOV' : '⚡ INT'}
+                                </span>
+                              )}
                             </div>
-                            <span className={`text-[10px] font-mono font-bold rounded-md px-1.5 py-0.5 ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90' : 'bg-[#111113] text-white/40'}`}>
+                            <span className={`text-[10px] font-mono font-bold rounded-md px-1.5 py-0.5 shrink-0 ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90' : 'bg-[#111113] text-white/40'}`}>
                               🀰 {targetPlayer.hand?.length || 0}
                             </span>
                             {isTurn && tVal > 0 && (
-                              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${remSec <= 5 ? 'bg-red-600 text-white animate-pulse' : remSec <= 10 ? 'bg-amber-500 text-slate-950' : 'bg-[#111113] text-[#fbbf24]'}`}>
+                              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0 flex items-center gap-1 ${remSec <= 5 ? 'bg-red-600 text-white animate-pulse' : remSec <= 10 ? 'bg-amber-500 text-slate-950' : 'bg-[#111113] text-[#fbbf24]'}`}>
                                 ⏱️ {remSec}s
                               </span>
                             )}
