@@ -6,7 +6,7 @@ import {
   ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info, Music,
   Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2, Maximize2
 } from 'lucide-react';
-import { Domino, GameRoom, GameStatus, Player, RoomListItem } from './types';
+import { Domino, GameRoom, GameStatus, Player, RoomListItem, BotDifficulty } from './types';
 import { DominoBoard } from './components/DominoBoard';
 import { DominoTile } from './components/DominoTile';
 import { ScoreHistoryChart } from './components/ScoreHistoryChart';
@@ -623,6 +623,7 @@ export default function App() {
   const [targetScore, setTargetScore] = useState<number>(150);
   const [turnTimerEnabled, setTurnTimerEnabled] = useState<boolean>(true);
   const [turnTimer, setTurnTimer] = useState<number>(60);
+  const [createBotDifficulty, setCreateBotDifficulty] = useState<BotDifficulty>('intermediate');
   const [joiningCode, setJoiningCode] = useState<string>('');
   const [playerSlot, setPlayerSlot] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1063,10 +1064,14 @@ export default function App() {
       setRoom(updatedRoom);
       roomRef.current = updatedRoom;
       
-      // Keep track of our actual slot
+      // Keep track of our actual slot or spectator status
       const myIndex = updatedRoom.players.findIndex(p => p && p.id === playerId);
+      const isSpectating = updatedRoom.spectators?.some(s => s.id === playerId);
+
       if (myIndex !== -1) {
         setPlayerSlot(myIndex);
+      } else if (isSpectating) {
+        setPlayerSlot(null);
       } else {
         // Player was removed/kicked from the room by the host
         setRoom(null);
@@ -1142,6 +1147,7 @@ export default function App() {
           playerName,
           playerId,
           isPublic,
+          defaultBotDifficulty: createBotDifficulty,
         }),
       });
       if (!response.ok) throw new Error('Failed to create room.');
@@ -1179,6 +1185,11 @@ export default function App() {
       });
       if (!response.ok) {
         const errData = await response.json();
+        if (errData.canSpectate) {
+          // Room full - offer to spectate instead
+          await spectateRoom(cleanCode);
+          return;
+        }
         throw new Error(errData.error || 'Failed to join room.');
       }
       const data = await response.json();
@@ -1194,17 +1205,137 @@ export default function App() {
     }
   };
 
-  const addBot = async () => {
+  const spectateRoom = async (code: string) => {
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanCode) return;
+    setLoading(true);
+    setError(null);
+    try {
+      let activeId = playerId;
+      if (!activeId) {
+        activeId = cryptoRandomId('spec');
+        setPlayerId(activeId);
+        localStorage.setItem('cuban_dominoes_player_id', activeId);
+      }
+
+      const response = await fetch(`/api/rooms/${cleanCode}/spectate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerName,
+          playerId: activeId,
+        }),
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to spectate room.');
+      }
+      const data = await response.json();
+      setRoom(data.room);
+      setRoomCode(data.room.roomCode);
+      setPlayerSlot(null);
+      setInvitedRoomCode(null);
+      clearUrlParams();
+    } catch (err: any) {
+      setError(err.message || 'Error spectating room');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const takeOpenSeat = async (slotIdx?: number) => {
+    if (!roomCode) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/rooms/${roomCode}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerName,
+          playerId,
+          slot: slotIdx
+        }),
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to take seat.');
+      }
+      const data = await response.json();
+      setRoom(data.room);
+      setPlayerSlot(data.playerSlot);
+    } catch (err: any) {
+      setError(err.message || 'Error taking seat');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const leaveSpectator = async () => {
+    if (!roomCode) return;
+    try {
+      await fetch(`/api/rooms/${roomCode}/leave-spectator`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
+    } catch (err) {
+      // ignore
+    }
+    setRoom(null);
+    setRoomCode('');
+    setPlayerSlot(null);
+  };
+
+  const addBot = async (difficulty?: BotDifficulty) => {
     if (!roomCode) return;
     try {
       const response = await fetch(`/api/rooms/${roomCode}/bot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requesterId: playerId }),
+        body: JSON.stringify({ requesterId: playerId, difficulty: difficulty || room?.defaultBotDifficulty || 'intermediate' }),
       });
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.error || 'Could not add bot.');
+      }
+      const data = await response.json();
+      setRoom(data.room);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const changeBotDifficulty = async (slotIdx: number, difficulty: BotDifficulty) => {
+    if (!roomCode) return;
+    try {
+      const response = await fetch(`/api/rooms/${roomCode}/bot-difficulty`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slot: slotIdx, difficulty, requesterId: playerId }),
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to update bot difficulty');
+      }
+      const data = await response.json();
+      setRoom(data.room);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const changeDefaultBotDifficulty = async (difficulty: BotDifficulty) => {
+    if (!roomCode) return;
+    try {
+      const response = await fetch(`/api/rooms/${roomCode}/default-bot-difficulty`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ difficulty, requesterId: playerId }),
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to update default bot difficulty');
       }
       const data = await response.json();
       setRoom(data.room);
@@ -1394,14 +1525,15 @@ export default function App() {
     }
   };
 
-  const sendReaction = async (emoji: string) => {
-    if (!roomCode || playerSlot === null || reactionCooldown > 0) return;
+  const sendReaction = async (emoji: string, customSlot?: number) => {
+    if (!roomCode || reactionCooldown > 0) return;
+    const targetSlot = typeof customSlot === 'number' ? customSlot : (playerSlot !== null ? playerSlot : -1);
     setReactionCooldown(5); // Start the 5-second cooldown immediately
     try {
       const response = await fetch(`/api/rooms/${roomCode}/react`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slot: playerSlot, emoji, playerId })
+        body: JSON.stringify({ slot: targetSlot, emoji, playerId })
       });
       if (response.ok) {
         const data = await response.json();
@@ -1915,7 +2047,7 @@ export default function App() {
                               </div>
                             </div>
 
-                            <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
                               <div className="flex items-center gap-2">
                                 <Users className="w-4 h-4 text-[#006876]" />
                                 <span className="font-mono text-xs font-bold text-[#1d1c13]">
@@ -1924,29 +2056,35 @@ export default function App() {
                                 <span className="text-[10px] font-mono text-[#83746f]">
                                   ({r.humanCount} Human{r.humanCount !== 1 ? 's' : ''})
                                 </span>
+                                {(r.spectatorCount || 0) > 0 && (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[#fe7328] bg-[#fe7328]/10 px-2 py-0.5 rounded border border-[#fe7328]/30">
+                                    <Eye className="w-3 h-3 text-[#fe7328]" />
+                                    {r.spectatorCount}
+                                  </span>
+                                )}
                               </div>
 
-                              <button
-                                onClick={() => joinRoom(r.roomCode)}
-                                disabled={loading || (isWaiting && isFull)}
-                                className={`px-5 py-2.5 font-mono text-xs font-bold uppercase rounded-sm transition-all flex items-center gap-1.5 cursor-pointer shadow-md ${
-                                  isWaiting
-                                    ? 'btn-turquoise'
-                                    : 'bg-[#32170d] text-[#fff9eb] hover:bg-[#4a2213]'
-                                }`}
-                              >
-                                {isWaiting ? (
-                                  <>
+                              <div className="flex items-center gap-2">
+                                {isWaiting && !isFull && (
+                                  <button
+                                    onClick={() => joinRoom(r.roomCode)}
+                                    disabled={loading}
+                                    className="px-4 py-2 font-mono text-xs font-bold uppercase rounded-sm btn-turquoise transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+                                  >
                                     <span>Join Table</span>
                                     <Play className="w-3.5 h-3.5 fill-white" />
-                                  </>
-                                ) : (
-                                  <>
-                                    <span>Watch / Join</span>
-                                    <Eye className="w-3.5 h-3.5" />
-                                  </>
+                                  </button>
                                 )}
-                              </button>
+                                <button
+                                  onClick={() => spectateRoom(r.roomCode)}
+                                  disabled={loading}
+                                  className="px-3.5 py-2 font-mono text-xs font-bold uppercase rounded-sm bg-[#32170d] text-[#8debfd] hover:bg-[#4a2213] border border-[#006876] transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+                                  title="Spectate match in progress or watch lobby"
+                                >
+                                  <span>{isFull ? 'Watch Match' : 'Spectate'}</span>
+                                  <Eye className="w-3.5 h-3.5 text-[#8debfd]" />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );
@@ -2159,6 +2297,40 @@ export default function App() {
                             />
                           </button>
                         </div>
+                      </div>
+
+                      {/* Bot Skill Level Selection */}
+                      <div className="bg-[#f3eddf] p-4 rounded-sm border border-[#83746f]/40 space-y-2 shadow-inner">
+                        <label className="text-xs font-mono font-bold uppercase tracking-wider text-[#1d1c13] flex items-center justify-between">
+                          <span className="flex items-center gap-2">
+                            <Bot className="w-4 h-4 text-[#fe7328]" />
+                            {t.botSkillLevel}
+                          </span>
+                          <span className="text-[10px] text-[#006876] font-bold uppercase font-mono">
+                            {createBotDifficulty === 'pro' ? '🧠 Pro Master' : createBotDifficulty === 'novice' ? '🎲 Novice' : '⚡ Intermediate'}
+                          </span>
+                        </label>
+                        <div className="grid grid-cols-3 gap-2 pt-1">
+                          {(['novice', 'intermediate', 'pro'] as BotDifficulty[]).map((level) => (
+                            <button
+                              key={level}
+                              type="button"
+                              onClick={() => setCreateBotDifficulty(level)}
+                              className={`py-2 px-1.5 rounded font-mono text-xs font-bold uppercase transition-all cursor-pointer border text-center ${
+                                createBotDifficulty === level
+                                  ? 'bg-[#006876] text-white border-[#006876] shadow'
+                                  : 'bg-[#e5dccb] hover:bg-[#d8ceba] text-[#504440] border-[#83746f]/30'
+                              }`}
+                            >
+                              {level === 'novice' ? '🎲 Novice' : level === 'intermediate' ? '⚡ Medium' : '🧠 Pro'}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[11px] font-serif italic text-[#504440]">
+                          {createBotDifficulty === 'novice' && 'Novice: Plays casually & unpredictably. Friendly for beginners.'}
+                          {createBotDifficulty === 'intermediate' && 'Intermediate: Standard AI. Plays heavy doubles and high tile values.'}
+                          {createBotDifficulty === 'pro' && 'Pro Master: Cuban Doble Nueve master. Tracks suit control, protects partner, blocks opponents.'}
+                        </p>
                       </div>
 
                       <div className="bg-[#f3eddf] border-l-4 border-[#fe7328] p-4 text-[11px] font-mono leading-relaxed text-[#1d1c13] space-y-1.5 shadow-sm">
@@ -2490,6 +2662,40 @@ export default function App() {
               )}
             </AnimatePresence>
 
+            {/* SPECTATOR MODE BANNER */}
+            {playerSlot === null && (
+              <div className="bg-[#fe7328]/15 border-b border-[#fe7328]/40 px-6 py-2.5 flex items-center justify-between text-xs font-mono font-bold text-[#fff9eb] z-30">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-[#fe7328] animate-pulse shrink-0" />
+                  <span className="text-[#fe7328] font-extrabold uppercase tracking-wide">SPECTATOR MODE</span>
+                  <span className="text-[#eee8da]/80 hidden sm:inline">• Watching live match</span>
+                  {room.spectators && room.spectators.length > 0 && (
+                    <span className="bg-[#32170d] px-2 py-0.5 rounded text-[10px] text-[#8debfd] border border-[#006876]">
+                      👁️ {room.spectators.length} Watching
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {room.players.some(p => p === null) && (
+                    <button
+                      onClick={() => takeOpenSeat()}
+                      disabled={loading}
+                      className="px-3 py-1 bg-[#006876] hover:bg-[#008092] text-white rounded text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow flex items-center gap-1"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      Take Open Seat
+                    </button>
+                  )}
+                  <button
+                    onClick={leaveSpectator}
+                    className="px-3 py-1 bg-[#32170d] hover:bg-[#4a2213] text-[#fe7328] border border-[#fe7328]/40 rounded text-xs font-bold uppercase transition-all cursor-pointer"
+                  >
+                    Stop Watching
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Middle Main Content */}
             <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-between">
               
@@ -2590,16 +2796,51 @@ export default function App() {
                                     </span>
                                   )}
                                 </p>
-                                <p className="text-[10px] text-white/40 mt-0.5 font-sans">
-                                  {player.type === 'bot' ? 'AI Bot' : 'Human'}
-                                </p>
+                                {player.type === 'bot' ? (
+                                  <div className="mt-1 flex flex-col items-center gap-1">
+                                    {isHost ? (
+                                      <select
+                                        value={player.botDifficulty || room.defaultBotDifficulty || 'intermediate'}
+                                        onChange={(e) => changeBotDifficulty(idx, e.target.value as BotDifficulty)}
+                                        className="bg-[#111113] border border-amber-500/40 text-amber-300 font-mono text-[10px] font-bold rounded-md px-1.5 py-0.5 focus:outline-none focus:border-amber-400 cursor-pointer text-center shadow-sm"
+                                        title="Change this bot's skill level"
+                                      >
+                                        <option value="novice">🎲 Novice</option>
+                                        <option value="intermediate">⚡ Intermediate</option>
+                                        <option value="pro">🧠 Pro Master</option>
+                                      </select>
+                                    ) : (
+                                      <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-md border uppercase flex items-center gap-1 ${
+                                        (player.botDifficulty || room.defaultBotDifficulty) === 'pro'
+                                          ? 'bg-purple-950/60 border-purple-400/50 text-purple-300'
+                                          : (player.botDifficulty || room.defaultBotDifficulty) === 'novice'
+                                          ? 'bg-emerald-950/60 border-emerald-400/50 text-emerald-300'
+                                          : 'bg-amber-950/60 border-amber-400/50 text-amber-300'
+                                      }`}>
+                                        {(player.botDifficulty || room.defaultBotDifficulty) === 'pro' ? '🧠 Pro Master' : (player.botDifficulty || room.defaultBotDifficulty) === 'novice' ? '🎲 Novice' : '⚡ Intermediate'}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <p className="text-[10px] text-white/40 mt-0.5 font-sans">Human</p>
+                                )}
                               </div>
                             </div>
                           ) : (
-                            <div className="flex-1 flex flex-col justify-center text-white/30 space-y-1">
+                            <div className="flex-1 flex flex-col justify-center items-center text-white/30 space-y-1">
                               <UserPlus className="w-7 h-7 mx-auto stroke-1 text-white/20" />
                               <p className="text-xs font-semibold">Empty Slot</p>
-                              <p className="text-[10px]">Lobby connecting...</p>
+                              {playerSlot === null ? (
+                                <button
+                                  onClick={() => takeOpenSeat(idx)}
+                                  disabled={loading}
+                                  className="mt-1 px-3 py-1 bg-[#006876] hover:bg-[#008092] text-white font-mono text-[11px] font-bold rounded uppercase cursor-pointer shadow transition-all flex items-center gap-1"
+                                >
+                                  Take Seat {idx + 1}
+                                </button>
+                              ) : (
+                                <p className="text-[10px]">Lobby connecting...</p>
+                              )}
                             </div>
                           )}
 
@@ -2616,6 +2857,19 @@ export default function App() {
                     })}
                   </div>
 
+                  {/* Spectators watching list in lobby stage */}
+                  {room.spectators && room.spectators.length > 0 && (
+                    <div className="p-3 rounded-xl bg-[#200d07]/60 border border-[#83746f]/30 flex items-center justify-between text-xs font-mono">
+                      <div className="flex items-center gap-2">
+                        <Eye className="w-4 h-4 text-[#fe7328] shrink-0" />
+                        <span className="text-[#eee8da] font-bold">Spectators ({room.spectators.length}):</span>
+                        <span className="text-[#8debfd] font-semibold truncate max-w-md">
+                          {room.spectators.map(s => s.name).join(', ')}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-white/5">
                     <div>
                       {!isHost && (
@@ -2629,6 +2883,21 @@ export default function App() {
                     <div className="flex items-center gap-3 w-full sm:w-auto justify-end flex-wrap">
                       {isHost ? (
                         <>
+                          <div className="flex items-center gap-1.5 bg-[#161619] border border-amber-500/30 px-3 py-2 rounded-xl font-mono text-xs">
+                            <Bot className="w-4 h-4 text-[#fbbf24]" />
+                            <span className="text-[10px] font-bold text-white/60 uppercase hidden sm:inline">{t.botSkillLevel}:</span>
+                            <select
+                              value={room.defaultBotDifficulty || 'intermediate'}
+                              onChange={(e) => changeDefaultBotDifficulty(e.target.value as BotDifficulty)}
+                              className="bg-[#0e0e10] border border-white/15 text-[#fbbf24] font-mono font-bold text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-amber-400 cursor-pointer"
+                              title="Set default skill level for newly added or auto-filled bots"
+                            >
+                              <option value="novice">🎲 Novice</option>
+                              <option value="intermediate">⚡ Intermediate</option>
+                              <option value="pro">🧠 Pro Master</option>
+                            </select>
+                          </div>
+
                           <button
                             onClick={exitRoom}
                             className="px-4 py-3 rounded-xl bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 text-red-300 font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer uppercase font-mono shadow"
@@ -2639,7 +2908,7 @@ export default function App() {
                           </button>
 
                           <button
-                            onClick={addBot}
+                            onClick={() => addBot()}
                             disabled={room.players.filter(p => p !== null).length === 4}
                             className="px-5 py-3 rounded-xl bg-[#1c1c1f] hover:bg-white/5 border border-white/5 text-white font-semibold text-xs transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer uppercase font-mono"
                           >
@@ -2671,7 +2940,7 @@ export default function App() {
               )}
 
               {/* STAGE VIEW B: PLAYING FIELD */}
-              {room.status !== 'waiting' && playerSlot !== null && (
+              {room.status !== 'waiting' && (
                 <div className="flex-1 flex flex-col justify-between">
                   {/* Domino chain layout panel */}
                   <div className="flex-1 flex flex-col justify-between items-stretch min-h-[440px] relative">
@@ -2679,19 +2948,22 @@ export default function App() {
                     {/* EMOJI REACTION FLOATERS OVERLAY */}
                     <AnimatePresence>
                       {room.reactions?.map((react) => {
-                        const relIdx = relativeSeats.indexOf(react.slot);
-                        if (relIdx === -1) return null;
-
-                        // Position class based on seat relative index
                         let positionClass = '';
-                        if (relIdx === 0) {
-                          positionClass = 'bottom-16 left-1/2 -translate-x-1/2';
-                        } else if (relIdx === 1) {
-                          positionClass = 'left-16 top-1/2 -translate-y-1/2';
-                        } else if (relIdx === 2) {
-                          positionClass = 'top-16 left-1/2 -translate-x-1/2';
-                        } else if (relIdx === 3) {
-                          positionClass = 'right-16 top-1/2 -translate-y-1/2';
+                        if (react.slot === -1) {
+                          positionClass = 'bottom-24 right-1/4';
+                        } else {
+                          const relIdx = relativeSeats.indexOf(react.slot);
+                          if (relIdx === -1) return null;
+
+                          if (relIdx === 0) {
+                            positionClass = 'bottom-16 left-1/2 -translate-x-1/2';
+                          } else if (relIdx === 1) {
+                            positionClass = 'left-16 top-1/2 -translate-y-1/2';
+                          } else if (relIdx === 2) {
+                            positionClass = 'top-16 left-1/2 -translate-x-1/2';
+                          } else if (relIdx === 3) {
+                            positionClass = 'right-16 top-1/2 -translate-y-1/2';
+                          }
                         }
 
                         return (
@@ -2756,6 +3028,11 @@ export default function App() {
                             <span className="text-xs font-bold leading-none flex items-center gap-1 truncate max-w-[120px]">
                               {player?.name || `Seat ${idx + 1}`}
                               <span className={`text-[8px] px-1.5 py-0.2 rounded-md uppercase font-sans font-black ${(isTurn || isCrown) ? 'bg-[#111113] text-[#fbbf24]' : 'bg-teal-500 text-slate-950'}`}>PARTNER</span>
+                              {player?.type === 'bot' && (
+                                <span className="text-[8px] px-1 py-0.2 rounded font-mono font-black uppercase bg-[#111113]/20 border border-current shrink-0">
+                                  {(player.botDifficulty || room.defaultBotDifficulty) === 'pro' ? '🧠 PRO' : (player.botDifficulty || room.defaultBotDifficulty) === 'novice' ? '🎲 NOV' : '⚡ INT'}
+                                </span>
+                              )}
                             </span>
                             <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90 font-bold' : 'bg-[#111113] text-white/40'}`}>
                               🀰 {player?.hand.length || 0}
@@ -2809,8 +3086,13 @@ export default function App() {
                             <div className="flex items-center gap-1">
                               {isCrown && <span className="text-sm cursor-help" title="Last Domino Winner 👑">👑</span>}
                               {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
-                              <span className="text-xs font-bold leading-none truncate max-w-[110px]">
-                                {player?.name || `Seat ${idx + 1}`}
+                              <span className="text-xs font-bold leading-none truncate max-w-[110px] flex items-center gap-1">
+                                <span>{player?.name || `Seat ${idx + 1}`}</span>
+                                {player?.type === 'bot' && (
+                                  <span className="text-[8px] px-1 py-0.2 rounded font-mono font-black uppercase bg-[#111113]/20 border border-current shrink-0">
+                                    {(player.botDifficulty || room.defaultBotDifficulty) === 'pro' ? '🧠 PRO' : (player.botDifficulty || room.defaultBotDifficulty) === 'novice' ? '🎲 NOV' : '⚡ INT'}
+                                  </span>
+                                )}
                               </span>
                             </div>
                             <div className="flex items-center gap-1">
@@ -2867,8 +3149,13 @@ export default function App() {
                             <div className="flex items-center gap-1">
                               {isCrown && <span className="text-sm cursor-help" title="Last Domino Winner 👑">👑</span>}
                               {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
-                              <span className="text-xs font-bold leading-none truncate max-w-[110px]">
-                                {player?.name || `Seat ${idx + 1}`}
+                              <span className="text-xs font-bold leading-none truncate max-w-[110px] flex items-center gap-1">
+                                <span>{player?.name || `Seat ${idx + 1}`}</span>
+                                {player?.type === 'bot' && (
+                                  <span className="text-[8px] px-1 py-0.2 rounded font-mono font-black uppercase bg-[#111113]/20 border border-current shrink-0">
+                                    {(player.botDifficulty || room.defaultBotDifficulty) === 'pro' ? '🧠 PRO' : (player.botDifficulty || room.defaultBotDifficulty) === 'novice' ? '🎲 NOV' : '⚡ INT'}
+                                  </span>
+                                )}
                               </span>
                             </div>
                             <div className="flex items-center gap-1">
@@ -3091,17 +3378,20 @@ export default function App() {
 
                     {/* SEAT 0: BOTTOM / PLAYER */}
                     {(() => {
-                      const isTurn = isMyTurn || (room.status === 'selecting_starter' && room.starterSelection && (
-                        playerSlot % 2 === room.starterSelection.selectingTeam
+                      const targetSlot = playerSlot !== null ? playerSlot : relativeSeats[0];
+                      const targetPlayer = room.players[targetSlot];
+                      const isTurn = room.turn === targetSlot || (room.status === 'selecting_starter' && room.starterSelection && (
+                        targetSlot % 2 === room.starterSelection.selectingTeam
                       ));
-                      const myPlayer = room.players[playerSlot];
-                      const isCrown = Boolean(myPlayer?.isLastDominoWinner || (room.lastDominoWinnerSlot !== null && room.lastDominoWinnerSlot === playerSlot));
-                      const streak = myPlayer?.dominoStreak || 0;
+                      const isCrown = Boolean(targetPlayer?.isLastDominoWinner || (room.lastDominoWinnerSlot !== null && room.lastDominoWinnerSlot === targetSlot));
+                      const streak = targetPlayer?.dominoStreak || 0;
 
                       const tVal = room.turnTimer || 0;
                       const elapsed = (isTurn && tVal > 0 && room.turnStartedAt) ? Math.max(0, (nowMs - room.turnStartedAt) / 1000) : 0;
                       const remSec = (isTurn && tVal > 0) ? Math.max(0, Math.ceil(tVal - elapsed)) : 0;
                       const ratio = (isTurn && tVal > 0) ? Math.max(0, Math.min(1, remSec / tVal)) : 1;
+
+                      if (!targetPlayer) return null;
 
                       return (
                         <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 z-30 flex flex-col items-center">
@@ -3118,12 +3408,18 @@ export default function App() {
                             {streak > 1 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black bg-gradient-to-r from-amber-500 to-red-600 text-white shadow animate-pulse" title={`${streak} Domino Wins in a Row!`}>🔥 {streak}x</span>}
                             <div className="flex flex-col">
                               <span className="text-xs font-bold leading-none flex items-center gap-1">
-                                👤 {myPlayer?.name}
-                                <span className={`text-[8px] px-1 py-0.2 rounded-md uppercase font-sans font-black ${(isTurn || isCrown) ? 'bg-[#111113] text-[#fbbf24]' : 'bg-[#fbbf24] text-[#111113]'}`}>YOU</span>
+                                {targetPlayer.type === 'bot' ? '🤖' : '👤'} {targetPlayer.name}
+                                {playerSlot === targetSlot ? (
+                                  <span className={`text-[8px] px-1 py-0.2 rounded-md uppercase font-sans font-black ${(isTurn || isCrown) ? 'bg-[#111113] text-[#fbbf24]' : 'bg-[#fbbf24] text-[#111113]'}`}>YOU</span>
+                                ) : (
+                                  <span className="text-[8px] px-1 py-0.2 rounded-md uppercase font-mono bg-white/10 text-white/60">
+                                    Slot {targetSlot + 1}
+                                  </span>
+                                )}
                               </span>
                             </div>
                             <span className={`text-[10px] font-mono font-bold rounded-md px-1.5 py-0.5 ${(isTurn || isCrown) ? 'bg-[#111113]/10 text-[#111113]/90' : 'bg-[#111113] text-white/40'}`}>
-                              🀰 {myPlayer?.hand.length || 0}
+                              🀰 {targetPlayer.hand?.length || 0}
                             </span>
                             {isTurn && tVal > 0 && (
                               <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${remSec <= 5 ? 'bg-red-600 text-white animate-pulse' : remSec <= 10 ? 'bg-amber-500 text-slate-950' : 'bg-[#111113] text-[#fbbf24]'}`}>
@@ -3142,8 +3438,73 @@ export default function App() {
 
                   </div>
 
-                  {/* USER HAND CONTROL */}
-                  <div className="mt-4 bg-[#1c1c1f] border border-white/5 p-5 rounded-2xl relative overflow-hidden shadow-2xl">
+                  {/* USER HAND CONTROL OR SPECTATOR PANEL */}
+                  {playerSlot === null ? (
+                    <div className="mt-4 bg-[#1c1c1f] border border-[#fe7328]/30 p-5 rounded-2xl relative overflow-hidden shadow-2xl">
+                      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-[#fe7328]/15 border border-[#fe7328]/40 flex items-center justify-center text-xl text-[#fe7328] shrink-0">
+                            👁️
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-white font-mono uppercase">Spectator Live View</span>
+                              <span className="px-2 py-0.5 bg-[#fe7328]/20 border border-[#fe7328]/40 text-[#fe7328] text-[10px] font-mono font-bold rounded uppercase animate-pulse">Live Match</span>
+                            </div>
+                            <p className="text-xs text-white/60 font-sans mt-0.5">
+                              Watching live match in real-time. React with emojis or claim an open seat when available.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {room.players.some(p => p === null) && (
+                            <button
+                              onClick={() => takeOpenSeat()}
+                              disabled={loading}
+                              className="px-4 py-2 bg-[#006876] hover:bg-[#008092] text-white font-mono text-xs font-bold rounded-lg uppercase shadow transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <UserPlus className="w-4 h-4" />
+                              <span>Take Open Seat</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={leaveSpectator}
+                            className="px-3.5 py-2 bg-[#32170d] hover:bg-[#4a2213] text-[#fe7328] border border-[#fe7328]/40 font-mono text-xs font-bold rounded-lg uppercase transition-all cursor-pointer flex items-center gap-1.5"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span>Stop Watching</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Spectator Quick Reaction Bar */}
+                      <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono text-white/50 uppercase font-bold">Quick Cheer:</span>
+                          {reactionCooldown > 0 && (
+                            <span className="text-[10px] font-mono text-amber-400 font-bold bg-amber-950/60 border border-amber-500/30 px-2 py-0.5 rounded">
+                              ⏳ {reactionCooldown}s
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {['👏', '🔥', '👑', '😂', '😮', '🎲', '🏆'].map((e) => (
+                            <button
+                              key={e}
+                              onClick={() => sendReaction(e, -1)}
+                              disabled={reactionCooldown > 0}
+                              className="px-3 py-1.5 bg-[#111113] hover:bg-white/10 disabled:opacity-30 border border-white/10 rounded-lg text-lg transition-transform active:scale-125 cursor-pointer shadow-sm"
+                              title={reactionCooldown > 0 ? `On cooldown (${reactionCooldown}s)` : `Send ${e} reaction`}
+                            >
+                              {e}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-4 bg-[#1c1c1f] border border-white/5 p-5 rounded-2xl relative overflow-hidden shadow-2xl">
                     <div className="relative z-30 flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-3">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -3468,6 +3829,7 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
               )}
 
@@ -3507,6 +3869,31 @@ export default function App() {
                     <span className="text-[9px] font-mono text-teal-400 block font-bold uppercase">TEAM B (2 & 4)</span>
                     <span className="text-2xl font-bold font-mono text-white leading-none">{room.scores[1]}</span>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Spectators Panel */}
+            {room.spectators && room.spectators.length > 0 && (
+              <div className="px-6 py-3 border-b border-white/5 bg-[#200d07]/40 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#fe7328] font-bold flex items-center gap-1">
+                    <Eye className="w-3.5 h-3.5 text-[#fe7328]" />
+                    Spectators ({room.spectators.length})
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                </div>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {room.spectators.map((s, sIdx) => (
+                    <span
+                      key={s.id || sIdx}
+                      className="inline-flex items-center gap-1 text-[10px] font-mono bg-[#111113] border border-white/10 text-white/80 px-2 py-0.5 rounded-full"
+                    >
+                      <span>👤</span>
+                      <span>{s.name}</span>
+                      {s.id === playerId && <span className="text-[8px] text-[#fe7328] font-bold">(You)</span>}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}

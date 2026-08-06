@@ -2,6 +2,14 @@ export type Domino = [number, number];
 
 export type PlayerType = 'human' | 'bot';
 
+export type BotDifficulty = 'novice' | 'intermediate' | 'pro';
+
+export interface Spectator {
+  id: string;
+  name: string;
+  joinedAt: number;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -11,6 +19,7 @@ export interface Player {
   isHost?: boolean;
   dominoStreak?: number; // Number of consecutive domino wins in a row
   isLastDominoWinner?: boolean; // True if this player played their last tile in the previous domino win
+  botDifficulty?: BotDifficulty;
 }
 
 export type GameStatus = 'waiting' | 'selecting_starter' | 'playing' | 'round_ended' | 'game_over';
@@ -36,6 +45,7 @@ export interface GameRoom {
   turnTimer?: number; // Turn timer limit in seconds (30 - 120)
   turnStartedAt?: number; // Timestamp (ms) when current turn started
   isPublic?: boolean;
+  defaultBotDifficulty?: BotDifficulty;
   hostName?: string;
   hostId?: string;
   scores: [number, number]; // [Team 0 (Slots 0 & 2), Team 1 (Slots 1 & 3)]
@@ -62,6 +72,7 @@ export interface GameRoom {
   consecutivePasses?: number;
   logs: string[];
   reactions?: Reaction[];
+  spectators?: Spectator[];
   lastUpdateTime: number;
 }
 
@@ -70,9 +81,11 @@ export interface RoomListItem {
   hostName: string;
   playerCount: number;
   humanCount: number;
+  spectatorCount?: number;
   status: GameStatus;
   targetScore: number;
   turnTimer?: number;
   isPublic: boolean;
+  defaultBotDifficulty?: BotDifficulty;
   lastUpdateTime: number;
 }

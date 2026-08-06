@@ -167,16 +167,65 @@ function hasValidMoves(hand: Domino[], board: Domino[]): boolean {
   return hand.some(([v1, v2]) => v1 === leftVal || v2 === leftVal || v1 === rightVal || v2 === rightVal);
 }
 
-// Select the best bot move
-function getBotMove(hand: Domino[], board: Domino[]): { tileIndex: number; side: 'left' | 'right' } | null {
+// Select the best bot move based on difficulty (Novice, Intermediate, Pro)
+type BotDifficulty = 'novice' | 'intermediate' | 'pro';
+
+function getBotMove(
+  hand: Domino[],
+  board: Domino[],
+  difficulty: BotDifficulty = 'intermediate',
+  playerSlot?: number,
+  room?: GameRoom
+): { tileIndex: number; side: 'left' | 'right' } | null {
+  if (hand.length === 0) return null;
+
+  // 1. OPENING MOVE (Empty Board)
   if (board.length === 0) {
-    // Play the highest value double, or highest tile
+    if (difficulty === 'novice') {
+      const randomIdx = cryptoRandomInt(hand.length);
+      return { tileIndex: randomIdx, side: 'right' };
+    }
+
+    if (difficulty === 'intermediate') {
+      let bestIndex = 0;
+      let bestScore = -1;
+      for (let i = 0; i < hand.length; i++) {
+        const [v1, v2] = hand[i];
+        const isDouble = v1 === v2;
+        const score = v1 + v2 + (isDouble ? 100 : 0);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = i;
+        }
+      }
+      return { tileIndex: bestIndex, side: 'right' };
+    }
+
+    // PRO: Cuban Master Opening Strategy
+    // Count suit frequencies in hand (0..9)
+    const suitCounts = new Array(10).fill(0);
+    hand.forEach(([v1, v2]) => {
+      suitCounts[v1]++;
+      if (v1 !== v2) suitCounts[v2]++;
+    });
+
     let bestIndex = 0;
-    let bestScore = -1;
+    let bestScore = -1000;
+
     for (let i = 0; i < hand.length; i++) {
       const [v1, v2] = hand[i];
       const isDouble = v1 === v2;
-      const score = v1 + v2 + (isDouble ? 100 : 0);
+      const totalPoints = v1 + v2;
+
+      let score = totalPoints + (isDouble ? 120 : 0);
+
+      // Suit Control: holding 4+ of a suit gives massive advantage
+      if (isDouble) {
+        score += suitCounts[v1] * 25;
+      } else {
+        score += (suitCounts[v1] + suitCounts[v2]) * 12;
+      }
+
       if (score > bestScore) {
         bestScore = score;
         bestIndex = i;
@@ -185,27 +234,115 @@ function getBotMove(hand: Domino[], board: Domino[]): { tileIndex: number; side:
     return { tileIndex: bestIndex, side: 'right' };
   }
 
+  // 2. MID-GAME / END-GAME MOVES (Board has tiles)
   const leftVal = board[0][0];
   const rightVal = board[board.length - 1][1];
-  const validMoves: { tileIndex: number; side: 'left' | 'right'; score: number }[] = [];
+
+  interface ValidMove {
+    tileIndex: number;
+    side: 'left' | 'right';
+    tile: Domino;
+    score: number;
+  }
+
+  const validMoves: ValidMove[] = [];
 
   for (let i = 0; i < hand.length; i++) {
     const tile = hand[i];
-    const isDouble = tile[0] === tile[1];
-    const baseScore = tile[0] + tile[1] + (isDouble ? 100 : 0);
-
     const { left, right } = canPlayTile(tile, leftVal, rightVal);
+
     if (left) {
-      validMoves.push({ tileIndex: i, side: 'left', score: baseScore });
+      validMoves.push({ tileIndex: i, side: 'left', tile, score: 0 });
     }
     if (right) {
-      validMoves.push({ tileIndex: i, side: 'right', score: baseScore });
+      validMoves.push({ tileIndex: i, side: 'right', tile, score: 0 });
     }
   }
 
   if (validMoves.length === 0) return null;
 
-  // Sort descending by score
+  // --- NOVICE ALGORITHM ---
+  if (difficulty === 'novice') {
+    // 60% chance to pick completely at random, 40% chance to pick lowest value tile
+    if (Math.random() < 0.6) {
+      const randomChoice = validMoves[cryptoRandomInt(validMoves.length)];
+      return { tileIndex: randomChoice.tileIndex, side: randomChoice.side };
+    }
+    validMoves.sort((a, b) => (a.tile[0] + a.tile[1]) - (b.tile[0] + b.tile[1]));
+    return { tileIndex: validMoves[0].tileIndex, side: validMoves[0].side };
+  }
+
+  // --- INTERMEDIATE ALGORITHM ---
+  if (difficulty === 'intermediate') {
+    for (const move of validMoves) {
+      const isDouble = move.tile[0] === move.tile[1];
+      move.score = move.tile[0] + move.tile[1] + (isDouble ? 100 : 0);
+    }
+    validMoves.sort((a, b) => b.score - a.score);
+    return { tileIndex: validMoves[0].tileIndex, side: validMoves[0].side };
+  }
+
+  // --- PRO MASTER ALGORITHM (Cuban Doble Nueve Advanced Strategy) ---
+  const handSuitCounts = new Array(10).fill(0);
+  hand.forEach(([v1, v2]) => {
+    handSuitCounts[v1]++;
+    if (v1 !== v2) handSuitCounts[v2]++;
+  });
+
+  const partnerSlot = playerSlot !== undefined ? (playerSlot + 2) % 4 : null;
+  const oppSlot1 = playerSlot !== undefined ? (playerSlot + 1) % 4 : null;
+  const oppSlot2 = playerSlot !== undefined ? (playerSlot + 3) % 4 : null;
+
+  for (const move of validMoves) {
+    const [v1, v2] = move.tile;
+    const isDouble = v1 === v2;
+    const totalValue = v1 + v2;
+
+    let exposedVal: number;
+    if (move.side === 'left') {
+      exposedVal = (v1 === leftVal) ? v2 : v1;
+    } else {
+      exposedVal = (v1 === rightVal) ? v2 : v1;
+    }
+
+    let score = 0;
+
+    // A. Heavy Double Dump: High doubles (9-9, 8-8, 7-7) get huge priority to prevent getting blocked
+    if (isDouble) {
+      score += 150 + (v1 * 15);
+    } else {
+      score += totalValue * 4;
+    }
+
+    // B. Suit Control (Suya Strategy): Holding extra tiles of the exposed suit
+    const remainingInHand = handSuitCounts[exposedVal] - (v1 === exposedVal || v2 === exposedVal ? 1 : 0);
+    score += remainingInHand * 35;
+
+    // C. Tactical Pressuring
+    if (room && room.logs) {
+      const logsText = room.logs.slice(-15).join('\n');
+      if (oppSlot1 !== null && room.players[oppSlot1]) {
+        const opp1Name = room.players[oppSlot1]?.name;
+        if (opp1Name && logsText.includes(`${opp1Name} has no valid moves`)) {
+          score += 25;
+        }
+      }
+      if (oppSlot2 !== null && room.players[oppSlot2]) {
+        const opp2Name = room.players[oppSlot2]?.name;
+        if (opp2Name && logsText.includes(`${opp2Name} has no valid moves`)) {
+          score += 25;
+        }
+      }
+    }
+
+    // D. End of hand urgency
+    if (hand.length <= 2) {
+      score += 100;
+    }
+
+    move.score = score;
+  }
+
   validMoves.sort((a, b) => b.score - a.score);
   return { tileIndex: validMoves[0].tileIndex, side: validMoves[0].side };
 }
@@ -554,7 +691,8 @@ function scheduleBotTurnIfNeeded(room: GameRoom) {
         return;
       }
 
-      const botMove = getBotMove(botPlayer.hand, currentRoom.board);
+      const botDiff = botPlayer.botDifficulty || currentRoom.defaultBotDifficulty || 'intermediate';
+      const botMove = getBotMove(botPlayer.hand, currentRoom.board, botDiff, currentRoom.turn, currentRoom);
       if (botMove) {
         executePlayTile(currentRoom, currentRoom.turn, botMove.tileIndex, botMove.side);
       } else {
@@ -634,10 +772,19 @@ function sanitizeRoomForPlayer(room: GameRoom, requesterPlayerId?: string): Game
     };
   }
 
+  const sanitizedSpectators = (room.spectators || []).map((spec) => {
+    const isSelf = Boolean(requesterPlayerId && spec.id === requesterPlayerId);
+    return {
+      ...spec,
+      id: isSelf ? spec.id : 'hidden'
+    };
+  });
+
   return {
     ...room,
     hostId: sanitizedHostId,
     players: sanitizedPlayers,
+    spectators: sanitizedSpectators,
     starterSelection
   };
 }
@@ -652,28 +799,29 @@ app.get('/api/public-rooms', (req, res) => {
   const publicRooms: RoomListItem[] = [];
   const now = Date.now();
 
-  // Cleanup stale rooms or rooms with zero human players
+  // Cleanup stale rooms or rooms with zero human players and zero spectators
   for (const [code, room] of rooms.entries()) {
     const activePlayers = room.players.filter(p => p !== null);
-    const humanCount = activePlayers.filter(p => p?.type === 'human').length;
+    const humanPlayerCount = activePlayers.filter(p => p?.type === 'human').length;
+    const spectatorCount = (room.spectators || []).length;
+    const totalHumanPresence = humanPlayerCount + spectatorCount;
 
-    // Automatically close lobbies with 0 human players or stale rooms (>3h)
-    if (humanCount === 0 || now - room.lastUpdateTime > 3 * 60 * 60 * 1000) {
+    // Automatically close lobbies with 0 human presence or stale rooms (>3h)
+    if (totalHumanPresence === 0 || now - room.lastUpdateTime > 3 * 60 * 60 * 1000) {
       rooms.delete(code);
       continue;
     }
 
     const isPublicRoom = room.isPublic ?? true;
     if (isPublicRoom && (room.status === 'waiting' || room.status === 'selecting_starter' || room.status === 'playing')) {
-      const activePlayers = room.players.filter(p => p !== null);
-      const humanCount = activePlayers.filter(p => p?.type === 'human').length;
       const host = room.players[0]?.name || room.hostName || 'Host';
 
       publicRooms.push({
         roomCode: room.roomCode,
         hostName: host,
         playerCount: activePlayers.length,
-        humanCount: humanCount,
+        humanCount: humanPlayerCount,
+        spectatorCount,
         status: room.status,
         targetScore: room.targetScore,
         turnTimer: room.turnTimer !== undefined ? room.turnTimer : 60,
@@ -706,6 +854,9 @@ app.post('/api/rooms', (req, res) => {
   const limitScore = sanitizeInt(targetScore, 50, 500, 150);
   const limitTurnTimer = (turnTimer === 0 || turnTimer === '0') ? 0 : sanitizeInt(turnTimer, 30, 120, 60);
   const roomIsPublic = isPublic !== undefined ? Boolean(isPublic) : true;
+  const defaultBotDiff: BotDifficulty = req.body?.defaultBotDifficulty && ['novice', 'intermediate', 'pro'].includes(req.body.defaultBotDifficulty)
+    ? req.body.defaultBotDifficulty
+    : 'intermediate';
   const cleanName = sanitizeString(playerName, 24, 'Player 1');
   const cleanId = sanitizeId(playerId, cryptoRandomId('host'));
 
@@ -723,6 +874,7 @@ app.post('/api/rooms', (req, res) => {
     targetScore: limitScore,
     turnTimer: limitTurnTimer,
     isPublic: roomIsPublic,
+    defaultBotDifficulty: defaultBotDiff,
     hostName: firstPlayer.name,
     hostId: firstPlayer.id,
     scores: [0, 0],
@@ -737,6 +889,7 @@ app.post('/api/rooms', (req, res) => {
     roundPointsEarned: 0,
     logs: [`Room ${code} created. Target: ${limitScore} PTS | Turn Timer: ${limitTurnTimer > 0 ? `${limitTurnTimer}s` : 'OFF'}. Waiting for players to join.`],
     reactions: [],
+    spectators: [],
     lastUpdateTime: Date.now()
   };
 
@@ -782,7 +935,15 @@ app.post('/api/rooms/:code/join', (req, res) => {
   }
 
   if (targetSlot === -1) {
-    return res.status(400).json({ error: 'Room is full' });
+    return res.status(400).json({ error: 'Room is full', canSpectate: true });
+  }
+
+  // If user was previously in spectators list, remove them
+  if (room.spectators) {
+    const specIdx = room.spectators.findIndex(s => s.id === cleanId);
+    if (specIdx !== -1) {
+      room.spectators.splice(specIdx, 1);
+    }
   }
 
   const newPlayer: Player = {
@@ -798,6 +959,75 @@ app.post('/api/rooms/:code/join', (req, res) => {
   room.lastUpdateTime = Date.now();
 
   res.json({ room: sanitizeRoomForPlayer(room, newPlayer.id), playerSlot: targetSlot });
+});
+
+// Join Room as Spectator
+app.post('/api/rooms/:code/spectate', (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const { playerName, playerId } = req.body || {};
+  const cleanName = sanitizeString(playerName, 24, 'Spectator');
+  const cleanId = sanitizeId(playerId, cryptoRandomId('spec'));
+
+  const room = rooms.get(code);
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (!room.spectators) {
+    room.spectators = [];
+  }
+
+  // If player was sitting at a player slot in waiting mode, remove them from player slot
+  const activePlayerIdx = room.players.findIndex(p => p && p.id === cleanId);
+  if (activePlayerIdx !== -1 && room.status === 'waiting') {
+    const removed = room.players[activePlayerIdx];
+    room.players[activePlayerIdx] = null;
+    if (removed) {
+      room.logs.push(`🪑 ${removed.name} left Slot ${activePlayerIdx + 1} and moved to Spectators.`);
+    }
+  }
+
+  // Add or update spectator entry
+  const specIndex = room.spectators.findIndex(s => s.id === cleanId);
+  if (specIndex === -1) {
+    room.spectators.push({
+      id: cleanId,
+      name: cleanName,
+      joinedAt: Date.now()
+    });
+    room.logs.push(`👁️ ${cleanName} is now spectating the match.`);
+  } else {
+    room.spectators[specIndex].name = cleanName;
+  }
+
+  room.lastUpdateTime = Date.now();
+  res.json({ room: sanitizeRoomForPlayer(room, cleanId), role: 'spectator' });
+});
+
+// Leave Spectator Seat
+app.post('/api/rooms/:code/leave-spectator', (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const { playerId } = req.body || {};
+  const cleanId = sanitizeId(playerId);
+
+  const room = rooms.get(code);
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (room.spectators) {
+    const specIndex = room.spectators.findIndex(s => s.id === cleanId);
+    if (specIndex !== -1) {
+      const specName = room.spectators[specIndex].name;
+      room.spectators.splice(specIndex, 1);
+      room.logs.push(`👋 ${specName} stopped spectating.`);
+      room.lastUpdateTime = Date.now();
+    }
+  }
+
+  res.json({ room: sanitizeRoomForPlayer(room, cleanId) });
 });
 
 // Update Player Name
@@ -848,6 +1078,7 @@ app.get('/api/rooms/:code', (req, res) => {
 app.post('/api/rooms/:code/bot', (req, res) => {
   const code = sanitizeRoomCode(req.params.code);
   const requesterId = sanitizeId(req.body?.requesterId);
+  const requestedDiff = req.body?.difficulty;
   const room = rooms.get(code);
 
   if (!room) {
@@ -869,6 +1100,10 @@ app.post('/api/rooms/:code/bot', (req, res) => {
     return res.status(400).json({ error: 'Room is full' });
   }
 
+  const difficulty: BotDifficulty = requestedDiff && ['novice', 'intermediate', 'pro'].includes(requestedDiff)
+    ? requestedDiff
+    : (room.defaultBotDifficulty || 'intermediate');
+
   const botNames = ['Bot Pepe', 'Bot Maria', 'Bot Jose', 'Bot Caridad'];
   const botName = botNames[emptySlot] || `Bot ${emptySlot + 1}`;
 
@@ -877,11 +1112,78 @@ app.post('/api/rooms/:code/bot', (req, res) => {
     name: botName,
     type: 'bot',
     slot: emptySlot,
-    hand: []
+    hand: [],
+    botDifficulty: difficulty,
   };
 
+  const diffLabel = difficulty === 'pro' ? 'Pro Master 🧠' : difficulty === 'novice' ? 'Novice 🎲' : 'Intermediate ⚡';
+
   room.players[emptySlot] = botPlayer;
-  room.logs.push(`🤖 ${botName} has been added to Slot ${emptySlot + 1}.`);
+  room.logs.push(`🤖 ${botName} (${diffLabel}) has been added to Slot ${emptySlot + 1}.`);
+  room.lastUpdateTime = Date.now();
+
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
+});
+
+// Update specific bot difficulty
+app.post('/api/rooms/:code/bot-difficulty', (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const { slot, difficulty, requesterId } = req.body || {};
+  const room = rooms.get(code);
+
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+
+  const isHost = room.hostId ? room.hostId === requesterId : requesterId === room.players[0]?.id;
+  if (!isHost) return res.status(403).json({ error: 'Only the lobby host can change bot skill levels.' });
+
+  const targetSlot = typeof slot === 'number' ? slot : parseInt(slot, 10);
+  if (isNaN(targetSlot) || targetSlot < 0 || targetSlot > 3) {
+    return res.status(400).json({ error: 'Invalid slot' });
+  }
+
+  const player = room.players[targetSlot];
+  if (!player || player.type !== 'bot') {
+    return res.status(400).json({ error: 'No bot in this slot' });
+  }
+
+  if (!['novice', 'intermediate', 'pro'].includes(difficulty)) {
+    return res.status(400).json({ error: 'Invalid difficulty level' });
+  }
+
+  player.botDifficulty = difficulty as BotDifficulty;
+  const diffLabel = difficulty === 'pro' ? 'Pro Master 🧠' : difficulty === 'novice' ? 'Novice 🎲' : 'Intermediate ⚡';
+  room.logs.push(`⚙️ ${player.name}'s skill level set to ${diffLabel}.`);
+  room.lastUpdateTime = Date.now();
+
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
+});
+
+// Update default bot difficulty for room
+app.post('/api/rooms/:code/default-bot-difficulty', (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const { difficulty, requesterId } = req.body || {};
+  const room = rooms.get(code);
+
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+
+  const isHost = room.hostId ? room.hostId === requesterId : requesterId === room.players[0]?.id;
+  if (!isHost) return res.status(403).json({ error: 'Only the lobby host can change default bot skill level.' });
+
+  if (!['novice', 'intermediate', 'pro'].includes(difficulty)) {
+    return res.status(400).json({ error: 'Invalid difficulty level' });
+  }
+
+  room.defaultBotDifficulty = difficulty as BotDifficulty;
+
+  // Also update any existing bots in the lobby
+  room.players.forEach(p => {
+    if (p && p.type === 'bot') {
+      p.botDifficulty = difficulty as BotDifficulty;
+    }
+  });
+
+  const diffLabel = difficulty === 'pro' ? 'Pro Master 🧠' : difficulty === 'novice' ? 'Novice 🎲' : 'Intermediate ⚡';
+  room.logs.push(`⚙️ Room default bot skill level set to ${diffLabel}.`);
   room.lastUpdateTime = Date.now();
 
   res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
@@ -928,15 +1230,16 @@ app.post('/api/rooms/:code/remove-slot', (req, res) => {
   room.logs.push(`🚪 ${targetPlayer.name} ${actionVerb}.`);
   room.players[targetSlot] = null;
 
-  // Check remaining human players
-  const remainingHumans = room.players.filter(p => p && p.type === 'human');
+  // Check remaining human players and spectators
+  const humanPlayerCount = room.players.filter(p => p && p.type === 'human').length;
+  const spectatorCount = (room.spectators || []).length;
 
-  if (remainingHumans.length === 0) {
-    // Automatically close lobbies that have zero human players
+  if (humanPlayerCount + spectatorCount === 0) {
+    // Automatically close lobbies that have zero human presence
     clearBotTimer(code);
     clearStarterTimer(code);
     rooms.delete(code);
-    return res.json({ message: 'Room closed (no human players remaining)', roomClosed: true });
+    return res.json({ message: 'Room closed (no human presence remaining)', roomClosed: true });
   }
 
   room.lastUpdateTime = Date.now();
@@ -1019,14 +1322,17 @@ app.post('/api/rooms/:code/start', (req, res) => {
   const botNames = ['Bot Pepe', 'Bot Maria', 'Bot Jose', 'Bot Caridad'];
   for (let i = 0; i < 4; i++) {
     if (!room.players[i]) {
+      const difficulty = room.defaultBotDifficulty || 'intermediate';
       room.players[i] = {
         id: `bot_${i}`,
         name: botNames[i],
         type: 'bot',
         slot: i,
-        hand: []
+        hand: [],
+        botDifficulty: difficulty,
       };
-      room.logs.push(`🤖 ${botNames[i]} added to fill Slot ${i + 1}.`);
+      const diffLabel = difficulty === 'pro' ? 'Pro Master 🧠' : difficulty === 'novice' ? 'Novice 🎲' : 'Intermediate ⚡';
+      room.logs.push(`🤖 ${botNames[i]} (${diffLabel}) added to fill Slot ${i + 1}.`);
     }
   }
 
@@ -1373,7 +1679,8 @@ app.post('/api/rooms/:code/reset', (req, res) => {
 // Send Quick Reaction Emoji
 app.post('/api/rooms/:code/react', (req, res) => {
   const code = sanitizeRoomCode(req.params.code);
-  const slotNum = sanitizeInt(req.body?.slot, 0, 3, -1);
+  let slotNum = sanitizeInt(req.body?.slot, 0, 3, -1);
+  const playerId = sanitizeId(req.body?.playerId);
   const emoji = sanitizeEmoji(req.body?.emoji);
   const room = rooms.get(code);
 
@@ -1381,8 +1688,11 @@ app.post('/api/rooms/:code/react', (req, res) => {
     return res.status(404).json({ error: 'Room not found' });
   }
 
-  if (slotNum < 0 || slotNum > 3) {
-    return res.status(400).json({ error: 'Invalid player slot' });
+  if (slotNum === -1 && playerId) {
+    const playerIdx = room.players.findIndex(p => p && p.id === playerId);
+    if (playerIdx !== -1) {
+      slotNum = playerIdx;
+    }
   }
 
   if (!emoji) {
@@ -1391,7 +1701,7 @@ app.post('/api/rooms/:code/react', (req, res) => {
 
   const newReaction: Reaction = {
     id: cryptoRandomId('react'),
-    slot: slotNum,
+    slot: slotNum, // -1 means spectator reaction
     emoji,
     timestamp: Date.now()
   };
@@ -1469,7 +1779,8 @@ setInterval(() => {
         continue;
       }
 
-      const botMove = getBotMove(activePlayer.hand, room.board);
+      const botDiff = activePlayer.botDifficulty || room.defaultBotDifficulty || 'intermediate';
+      const botMove = getBotMove(activePlayer.hand, room.board, botDiff, activeSlot, room);
       if (botMove) {
         const tile = activePlayer.hand[botMove.tileIndex];
         room.logs.push(`⏰ ${activePlayer.name}'s turn timer expired (${room.turnTimer}s)! Auto-played tile [${tile[0]}|${tile[1]}].`);
