@@ -95,27 +95,47 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
     setIsDragging(false);
   };
 
+  const touchDistRef = useRef<number | null>(null);
+
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       setIsDragging(true);
+      touchDistRef.current = null;
       const touch = e.touches[0];
       setDragStart({ x: touch.clientX - panOffset.x, y: touch.clientY - panOffset.y });
+    } else if (e.touches.length === 2) {
+      setIsDragging(false);
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      touchDistRef.current = dist;
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return;
-    if (e.touches.length === 1) {
+    if (e.touches.length === 1 && isDragging) {
       const touch = e.touches[0];
       setPanOffset({
         x: touch.clientX - dragStart.x,
         y: touch.clientY - dragStart.y,
       });
+    } else if (e.touches.length === 2 && touchDistRef.current !== null) {
+      const newDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const ratio = newDist / touchDistRef.current;
+      if (Math.abs(ratio - 1) > 0.02) {
+        setZoomScale((prev) => Math.max(0.3, Math.min(3.0, prev * ratio)));
+        touchDistRef.current = newDist;
+      }
     }
   };
 
   const handleTouchEnd = () => {
     setIsDragging(false);
+    touchDistRef.current = null;
   };
 
   const handleDoubleClick = () => {
@@ -218,12 +238,11 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
       }} />
 
       {/* Interaction Hint */}
-      <div className="absolute top-4 left-4 pointer-events-none opacity-60 text-[9px] md:text-xs font-mono text-white/90 flex items-center gap-1.5 select-none z-10 bg-black/60 px-2.5 py-1 rounded border border-white/20 backdrop-blur-sm shadow-md">
-        <span>🖱️ Drag to Pan</span>
+      <div className="absolute top-3 left-3 pointer-events-none opacity-70 text-[9px] sm:text-xs font-mono text-white/90 flex items-center gap-1.5 select-none z-10 bg-black/70 px-2.5 py-1 rounded-md border border-white/20 backdrop-blur-md shadow-md max-w-[90vw] overflow-x-auto whitespace-nowrap">
+        <span>👆 Drag to Pan</span>
         <span>•</span>
-        <span>🎡 Scroll to Zoom</span>
-        <span>•</span>
-        <span>Double-click to Reset</span>
+        <span>🤏 Pinch / Scroll to Zoom</span>
+        <span className="hidden sm:inline">• Double-tap Reset</span>
       </div>
 
       {board.length === 0 ? (

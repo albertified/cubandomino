@@ -4,7 +4,7 @@ import {
   Trophy, Users, Play, Plus, LogOut, RefreshCw, 
   Bot, ShieldAlert, Sparkles, Send, Clock, HelpCircle, 
   ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info, Music,
-  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2, Maximize2
+  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2, Maximize2, EyeOff
 } from 'lucide-react';
 import { Domino, GameRoom, GameStatus, Player, RoomListItem, BotDifficulty } from './types';
 import { DominoBoard } from './components/DominoBoard';
@@ -18,6 +18,7 @@ import { ContactAboutPage } from './components/ContactAboutPage';
 import { InviteModal } from './components/InviteModal';
 import { translations, Language } from './translations';
 import { BoardThemeId, FichaThemeId, BOARD_THEMES, FICHA_THEMES, MATCHED_PRESETS } from './utils/themes';
+import { StealthPreset, STEALTH_OPTIONS, applyStealthDisguise, DEFAULT_STEALTH_HOTKEY } from './utils/stealthMode';
 
 // Browser Web Crypto random helpers for cryptographically secure randomness
 function cryptoRandom(): number {
@@ -701,6 +702,39 @@ export default function App() {
   const [settingsSfxEnabled, setSettingsSfxEnabled] = useState<boolean>(true);
   const [settingsSavedToast, setSettingsSavedToast] = useState<boolean>(false);
 
+  // Stealth / Tab Disguise Mode States
+  const [stealthPreset, setStealthPreset] = useState<StealthPreset>(() => {
+    return (localStorage.getItem('cuban_dominoes_stealth_preset') as StealthPreset) || 'google';
+  });
+  const [stealthActive, setStealthActive] = useState<boolean>(() => {
+    return localStorage.getItem('cuban_dominoes_stealth_active') === 'true';
+  });
+  const [settingsStealthPreset, setSettingsStealthPreset] = useState<StealthPreset>('google');
+  const [settingsStealthActive, setSettingsStealthActive] = useState<boolean>(false);
+  const [stealthToastMsg, setStealthToastMsg] = useState<string | null>(null);
+
+  const toggleStealthModeDirect = () => {
+    const nextActive = !stealthActive;
+    let targetPreset = stealthPreset;
+    if (targetPreset === 'off') {
+      targetPreset = 'google';
+      setStealthPreset('google');
+      localStorage.setItem('cuban_dominoes_stealth_preset', 'google');
+    }
+    setStealthActive(nextActive);
+    localStorage.setItem('cuban_dominoes_stealth_active', String(nextActive));
+
+    const optionObj = STEALTH_OPTIONS.find((o) => o.id === (nextActive ? targetPreset : 'off'));
+    const toastText = nextActive
+      ? `Stealth Mode ON: Disguised as ${optionObj?.name || 'Tab Disguise'}`
+      : `Stealth Mode OFF: Restored original tab`;
+
+    setStealthToastMsg(toastText);
+    setTimeout(() => {
+      setStealthToastMsg((curr) => (curr === toastText ? null : curr));
+    }, 2800);
+  };
+
   // Domino Tile Hand Scale State
   const [handTileScale, setHandTileScale] = useState<number>(() => {
     const stored = localStorage.getItem('cuban_dominoes_hand_scale');
@@ -721,6 +755,8 @@ export default function App() {
     setSettingsHandScale(handTileScale);
     setSettingsMusicEnabled(musicEnabled);
     setSettingsSfxEnabled(sfxEnabled);
+    setSettingsStealthPreset(stealthPreset);
+    setSettingsStealthActive(stealthActive);
     setShowSettings(true);
   };
 
@@ -753,6 +789,18 @@ export default function App() {
     setHandTileScale(settingsHandScale);
     localStorage.setItem('cuban_dominoes_hand_scale', String(settingsHandScale));
 
+    setStealthPreset(settingsStealthPreset);
+    localStorage.setItem('cuban_dominoes_stealth_preset', settingsStealthPreset);
+
+    setStealthActive(settingsStealthActive);
+    localStorage.setItem('cuban_dominoes_stealth_active', String(settingsStealthActive));
+
+    if (settingsStealthActive && settingsStealthPreset !== 'off') {
+      applyStealthDisguise(settingsStealthPreset);
+    } else {
+      applyStealthDisguise('off');
+    }
+
     // If currently in a room, send update to server
     if (roomCode && playerId) {
       try {
@@ -783,6 +831,7 @@ export default function App() {
   // Gameplay specific UI states
   const [selectedTileIndex, setSelectedTileIndex] = useState<number | null>(null);
   const [pendingPlaySides, setPendingPlaySides] = useState<{ left: boolean; right: boolean } | null>(null);
+  const [mobileTab, setMobileTab] = useState<'board' | 'chat' | 'scores'>('board');
 
   // Hand organization states
   const [localHand, setLocalHand] = useState<{ val: Domino; originalIndex: number }[]>([]);
@@ -930,6 +979,54 @@ export default function App() {
     audio.updateSfxVolume(sfxEnabled);
     localStorage.setItem('cuban_dominoes_sfx_enabled', String(sfxEnabled));
   }, [sfxEnabled]);
+
+  // Sync Stealth Mode tab disguise whenever active state or preset changes
+  useEffect(() => {
+    if (stealthActive && stealthPreset !== 'off') {
+      applyStealthDisguise(stealthPreset);
+    } else {
+      applyStealthDisguise('off');
+    }
+  }, [stealthActive, stealthPreset]);
+
+  // Global Hotkey Listener: Alt + Shift + H to instantly toggle Stealth Mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.shiftKey && (e.code === 'KeyH' || e.key.toLowerCase() === 'h')) {
+        e.preventDefault();
+
+        setStealthActive((prevActive) => {
+          const nextActive = !prevActive;
+          localStorage.setItem('cuban_dominoes_stealth_active', String(nextActive));
+
+          let targetPreset = stealthPreset;
+          if (targetPreset === 'off') {
+            targetPreset = 'google';
+            setStealthPreset('google');
+            localStorage.setItem('cuban_dominoes_stealth_preset', 'google');
+          }
+
+          const presetToApply = nextActive ? targetPreset : 'off';
+          applyStealthDisguise(presetToApply);
+
+          const optionObj = STEALTH_OPTIONS.find((o) => o.id === (nextActive ? targetPreset : 'off'));
+          const toastText = nextActive
+            ? `Stealth Mode ON: Disguised as ${optionObj?.name || 'Tab Disguise'}`
+            : `Stealth Mode OFF: Restored original tab`;
+
+          setStealthToastMsg(toastText);
+          setTimeout(() => {
+            setStealthToastMsg((curr) => (curr === toastText ? null : curr));
+          }, 2800);
+
+          return nextActive;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [stealthPreset]);
 
   // Gracefully handle browser auto-play policies by triggering on first interaction
   useEffect(() => {
@@ -1815,6 +1912,18 @@ export default function App() {
                 {sfxEnabled ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
                 <span>{sfxEnabled ? "SFX: ON" : "SFX: OFF"}</span>
               </button>
+              <button
+                onClick={toggleStealthModeDirect}
+                className={`border px-2.5 py-1 cursor-pointer transition-colors rounded-xs flex items-center gap-1 font-mono text-xs ${
+                  stealthActive
+                    ? 'border-[#8debfd] bg-[#006876] text-white shadow-sm font-bold'
+                    : 'border-[#83746f]/40 bg-[#200d07]/60 text-[#83746f] hover:text-[#eee8da]'
+                }`}
+                title={stealthActive ? "Disable Stealth Mode (Alt+Shift+H)" : "Enable Stealth Mode / Tab Disguise (Alt+Shift+H)"}
+              >
+                <EyeOff className="w-3 h-3" />
+                <span className="hidden sm:inline">{stealthActive ? "Stealth: ON" : "Stealth"}</span>
+              </button>
               <button 
                 onClick={openSettingsModal}
                 className="border border-[#006876] hover:bg-[#006876]/30 px-3 py-1 cursor-pointer transition-colors bg-[#200d07]/90 text-[#8debfd] font-bold flex items-center gap-1.5 rounded-xs shadow-sm"
@@ -2528,6 +2637,22 @@ export default function App() {
                 </span>
               </button>
 
+              {/* Stealth Mode Switch */}
+              <button
+                onClick={toggleStealthModeDirect}
+                className={`p-2.5 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center ${
+                  stealthActive
+                    ? 'bg-[#006876] border-[#8debfd] text-white shadow-sm font-bold'
+                    : 'bg-[#200d07] border-[#83746f]/30 text-[#83746f] hover:text-[#eee8da]'
+                }`}
+                title={stealthActive ? "Disable Stealth Mode (Alt+Shift+H)" : "Enable Stealth Mode / Tab Disguise (Alt+Shift+H)"}
+              >
+                <EyeOff className="w-4 h-4 text-[#8debfd]" />
+                <span className="text-[7px] font-mono uppercase tracking-widest mt-1 font-bold leading-none">
+                  {stealthActive ? 'STEALTH ON' : 'STEALTH'}
+                </span>
+              </button>
+
               {/* Settings Switch */}
               <button 
                 onClick={openSettingsModal}
@@ -2566,7 +2691,7 @@ export default function App() {
           </aside>
 
           {/* CENTER COLUMN: MAIN GAME STAGE */}
-          <main className="main-stage">
+          <main className={`main-stage ${mobileTab !== 'board' ? 'hidden lg:flex' : ''}`}>
             {/* Action Bar Header */}
             <header className="px-6 py-4 border-b border-[#83746f]/30 flex items-center justify-between bg-[#200d07]/40">
               <div>
@@ -2648,6 +2773,43 @@ export default function App() {
                 </button>
               </div>
             </header>
+
+            {/* MOBILE VIEW SWITCHER TABS (Only visible on mobile / tablet < 1024px) */}
+            <div className="flex lg:hidden items-center justify-around bg-[#161618] border-b border-white/10 p-1.5 z-30 shadow-md">
+              <button
+                onClick={() => setMobileTab('board')}
+                className={`flex-1 py-2 px-2 rounded-lg text-xs font-mono font-bold uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  mobileTab === 'board'
+                    ? 'bg-[#006876] text-white shadow-md border border-[#8debfd]/40'
+                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <span>🀰</span>
+                <span>Board</span>
+              </button>
+              <button
+                onClick={() => setMobileTab('chat')}
+                className={`flex-1 py-2 px-2 rounded-lg text-xs font-mono font-bold uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  mobileTab === 'chat'
+                    ? 'bg-[#006876] text-white shadow-md border border-[#8debfd]/40'
+                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <span>💬</span>
+                <span>Activity & Log</span>
+              </button>
+              <button
+                onClick={() => setMobileTab('scores')}
+                className={`flex-1 py-2 px-2 rounded-lg text-xs font-mono font-bold uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  mobileTab === 'scores'
+                    ? 'bg-[#006876] text-white shadow-md border border-[#8debfd]/40'
+                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <span>📊</span>
+                <span>Scores</span>
+              </button>
+            </div>
 
             {/* ERROR BANNER IN MATCH */}
             <AnimatePresence>
@@ -3854,6 +4016,55 @@ export default function App() {
                       </div>
                     )}
 
+                    {/* MOBILE & TOUCH FRIENDLY PLAY SIDE SELECTION BANNER / POPUP */}
+                    <AnimatePresence>
+                      {pendingPlaySides !== null && selectedTileIndex !== null && myHand[selectedTileIndex] && (
+                        <motion.div
+                          initial={{ y: 60, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          exit={{ y: 60, opacity: 0 }}
+                          className="fixed bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 w-[92vw] max-w-md bg-[#1c1c1f]/95 border-2 border-[#006876] backdrop-blur-xl p-4 rounded-2xl shadow-2xl flex flex-col items-center gap-3 text-center"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-bold text-[#8debfd] uppercase tracking-wider">
+                              Choose Which End to Play
+                            </span>
+                            <span className="bg-[#006876] text-white text-[11px] font-mono px-2.5 py-0.5 rounded font-bold border border-[#8debfd]/40">
+                              Tile [{myHand[selectedTileIndex][0]}|{myHand[selectedTileIndex][1]}]
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-white/70 font-sans">
+                            This domino matches both the Left and Right ends of the board chain.
+                          </p>
+                          <div className="flex items-center gap-3 w-full">
+                            <button
+                              onClick={() => playTile(selectedTileIndex, 'left')}
+                              className="flex-1 py-3 px-4 bg-[#006876] hover:bg-[#007a8a] text-white font-mono font-bold text-xs uppercase rounded-xl shadow-lg border border-[#8debfd]/40 flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+                            >
+                              <ArrowLeft className="w-4 h-4" />
+                              PLAY LEFT
+                            </button>
+                            <button
+                              onClick={() => playTile(selectedTileIndex, 'right')}
+                              className="flex-1 py-3 px-4 bg-[#006876] hover:bg-[#007a8a] text-white font-mono font-bold text-xs uppercase rounded-xl shadow-lg border border-[#8debfd]/40 flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+                            >
+                              PLAY RIGHT
+                              <ArrowRight className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSelectedTileIndex(null);
+                              setPendingPlaySides(null);
+                            }}
+                            className="text-[11px] font-mono text-white/50 hover:text-white underline cursor-pointer"
+                          >
+                            Cancel Selection
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
                     {!isMyTurn && room.status === 'playing' && (
                       <div className="mt-4 z-10">
                         <div className="flex items-center justify-between bg-[#111113]/80 border border-white/10 px-4 py-2.5 rounded-xl">
@@ -3888,7 +4099,7 @@ export default function App() {
           </main>
 
           {/* RIGHT COLUMN: SIDEBAR INFO BAR */}
-          <aside className="sidebar-right">
+          <aside className={`sidebar-right ${mobileTab === 'board' ? 'hidden lg:flex' : 'flex'}`}>
             {/* Table Lobby code */}
             <div className="p-6 border-b border-white/5 flex flex-col gap-2">
               <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">ROOM LOBBY ID</span>
@@ -4650,7 +4861,126 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Section 6: Privacy, Terms & Info Pages */}
+                {/* Section 6: Stealth Mode / Tab Disguise Settings */}
+                <div className="space-y-3 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <label className="block text-xs font-mono uppercase tracking-widest text-[#8debfd] font-bold flex items-center gap-2">
+                        <EyeOff className="w-4 h-4 text-[#8debfd]" />
+                        <span>Disguise Tab / Stealth Mode</span>
+                      </label>
+                      <p className="text-[10px] font-sans text-white/50">
+                        Instantly rename browser tab title & favicon to mimic a common school or productivity site
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono bg-white/10 text-white/70 px-2 py-0.5 rounded border border-white/10 hidden sm:inline">
+                        Alt + Shift + H
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextActive = !settingsStealthActive;
+                          setSettingsStealthActive(nextActive);
+                          if (nextActive && settingsStealthPreset === 'off') {
+                            setSettingsStealthPreset('google');
+                          }
+                        }}
+                        className={`px-3.5 py-1.5 text-xs font-mono font-bold uppercase rounded-md border transition-all cursor-pointer ${
+                          settingsStealthActive
+                            ? 'bg-[#006876] border-[#8debfd] text-white shadow-sm'
+                            : 'bg-transparent border-white/10 text-white/40'
+                        }`}
+                      >
+                        {settingsStealthActive ? 'STEALTH: ON' : 'STEALTH: OFF'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Preset Selector Dropdown and Grid */}
+                  <div className="p-3.5 bg-[#111113] border border-white/10 rounded-xl space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-mono text-white/80 font-bold block">
+                        Preferred Disguise Preset
+                      </label>
+                      <select
+                        value={settingsStealthActive ? settingsStealthPreset : 'off'}
+                        onChange={(e) => {
+                          const val = e.target.value as StealthPreset;
+                          if (val === 'off') {
+                            setSettingsStealthActive(false);
+                            setSettingsStealthPreset('off');
+                          } else {
+                            setSettingsStealthActive(true);
+                            setSettingsStealthPreset(val);
+                          }
+                        }}
+                        className="w-full bg-[#1c1c20] border border-white/20 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-[#8debfd] cursor-pointer"
+                      >
+                        <option value="off">Off / Default (Cuban Domino Online)</option>
+                        <option value="google">Google Search (Title: "Google")</option>
+                        <option value="classroom">Google Classroom (Title: "Classes")</option>
+                        <option value="drive">Google Drive (Title: "My Drive - Google Drive")</option>
+                      </select>
+                    </div>
+
+                    {/* Preset Choice Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      {STEALTH_OPTIONS.map((option) => {
+                        const isSelected = settingsStealthActive
+                          ? settingsStealthPreset === option.id
+                          : option.id === 'off';
+
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => {
+                              if (option.id === 'off') {
+                                setSettingsStealthActive(false);
+                                setSettingsStealthPreset('off');
+                              } else {
+                                setSettingsStealthActive(true);
+                                setSettingsStealthPreset(option.id);
+                              }
+                            }}
+                            className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
+                              isSelected
+                                ? 'bg-[#006876]/30 border-[#8debfd] text-white shadow-sm ring-1 ring-[#8debfd]/50'
+                                : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            <img
+                              src={option.favicon}
+                              alt={option.name}
+                              className="w-5 h-5 rounded shrink-0 mt-0.5 object-contain bg-white/10 p-0.5"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLElement).style.display = 'none';
+                              }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-mono font-bold truncate">{option.name}</span>
+                                {isSelected && <Check className="w-3.5 h-3.5 text-[#8debfd] shrink-0" />}
+                              </div>
+                              <p className="text-[10px] font-mono text-white/50 truncate mt-0.5">
+                                Title: <span className="text-[#8debfd]/90 font-sans">"{option.title}"</span>
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-white/50">
+                      <span>Shortcut Keybind: <strong className="text-[#8debfd]">Alt + Shift + H</strong></span>
+                      <span>Press anytime to instantly toggle disguise</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 7: Privacy, Terms & Info Pages */}
                 <div className="space-y-3 pt-4 border-t border-white/10">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-mono uppercase tracking-widest text-amber-300 font-bold">
@@ -4770,6 +5100,24 @@ export default function App() {
         isOpenForce={showCookieModal}
         onCloseForce={() => setShowCookieModal(false)}
       />
+
+      {/* Stealth Mode Floating Toast Banner */}
+      <AnimatePresence>
+        {stealthToastMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 bg-[#111113]/95 border border-[#8debfd] text-white font-mono text-xs rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-2.5"
+          >
+            <EyeOff className="w-4 h-4 text-[#8debfd] shrink-0" />
+            <span>{stealthToastMsg}</span>
+            <span className="bg-[#006876] text-[#8debfd] text-[9px] px-1.5 py-0.5 rounded font-bold border border-[#8debfd]/40 ml-1">
+              Alt+Shift+H
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
