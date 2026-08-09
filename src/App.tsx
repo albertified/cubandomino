@@ -2592,31 +2592,31 @@ export default function App() {
               {/* Track Toggle */}
               <button 
                 onClick={() => setCurrentTrack(currentTrack === 'jazz' ? 'fairy' : (currentTrack === 'fairy' ? 'havana' : 'jazz'))}
-                className={`p-2.5 rounded-md border transition-all cursor-pointer bg-[#200d07] flex flex-col items-center justify-center ${
+                className={`w-11 h-11 rounded-md border transition-all cursor-pointer bg-[#200d07] flex flex-col items-center justify-center text-center shrink-0 ${
                   musicEnabled 
                     ? 'border-[#006876] text-[#8debfd] shadow-md' 
                     : 'border-[#83746f]/30 text-[#83746f] opacity-50 hover:opacity-100'
                 }`}
                 title={`Track: ${currentTrack === 'jazz' ? 'Jazz Lounge' : (currentTrack === 'fairy' ? 'Fairy Fountain' : 'Havana Montuno')} (Click to switch)`}
               >
-                <Music className="w-4 h-4" />
-                <span className="text-[7px] font-mono uppercase tracking-widest mt-1 font-bold leading-none text-[#eee8da]">
-                  {currentTrack === 'jazz' ? 'Jazz' : (currentTrack === 'fairy' ? 'Zelda' : 'Havana')}
+                <Music className="w-4 h-4 shrink-0" />
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#eee8da]">
+                  {currentTrack === 'jazz' ? 'JAZZ' : (currentTrack === 'fairy' ? 'ZELDA' : 'HAVANA')}
                 </span>
               </button>
 
               {/* Music Switch */}
               <button 
                 onClick={() => setMusicEnabled(!musicEnabled)}
-                className={`p-2.5 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center ${
+                className={`w-11 h-11 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 ${
                   musicEnabled 
                     ? 'bg-[#200d07] border-[#006876] text-[#8debfd] shadow-sm' 
                     : 'bg-transparent border-[#83746f]/30 text-[#83746f] hover:text-[#eee8da]'
                 }`}
                 title={musicEnabled ? "Mute Background Music" : "Unmute Background Music"}
               >
-                <Music className="w-4 h-4" />
-                <span className="text-[7px] font-mono uppercase tracking-widest mt-1 font-bold leading-none">
+                <Music className="w-4 h-4 shrink-0" />
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
                   {musicEnabled ? 'MUS ON' : 'MUS OFF'}
                 </span>
               </button>
@@ -2624,15 +2624,15 @@ export default function App() {
               {/* SFX Switch */}
               <button 
                 onClick={() => setSfxEnabled(!sfxEnabled)}
-                className={`p-2.5 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center ${
+                className={`w-11 h-11 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 ${
                   sfxEnabled 
                     ? 'bg-[#200d07] border-[#006876] text-[#8debfd] shadow-sm' 
                     : 'bg-transparent border-[#83746f]/30 text-[#83746f] hover:text-[#eee8da]'
                 }`}
                 title={sfxEnabled ? "Mute Sound Effects" : "Unmute Sound Effects"}
               >
-                {sfxEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                <span className="text-[7px] font-mono uppercase tracking-widest mt-1 font-bold leading-none">
+                {sfxEnabled ? <Volume2 className="w-4 h-4 shrink-0" /> : <VolumeX className="w-4 h-4 shrink-0" />}
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
                   {sfxEnabled ? 'SFX ON' : 'SFX OFF'}
                 </span>
               </button>
@@ -2640,53 +2640,65 @@ export default function App() {
               {/* Stealth Mode Switch */}
               <button
                 onClick={toggleStealthModeDirect}
-                className={`p-2.5 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center ${
+                className={`w-11 h-11 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 ${
                   stealthActive
                     ? 'bg-[#006876] border-[#8debfd] text-white shadow-sm font-bold'
                     : 'bg-[#200d07] border-[#83746f]/30 text-[#83746f] hover:text-[#eee8da]'
                 }`}
                 title={stealthActive ? "Disable Stealth Mode (Alt+Shift+H)" : "Enable Stealth Mode / Tab Disguise (Alt+Shift+H)"}
               >
-                <EyeOff className="w-4 h-4 text-[#8debfd]" />
-                <span className="text-[7px] font-mono uppercase tracking-widest mt-1 font-bold leading-none">
-                  {stealthActive ? 'STEALTH ON' : 'STEALTH'}
+                <EyeOff className="w-4 h-4 text-[#8debfd] shrink-0" />
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
+                  {stealthActive ? 'STEALTH' : 'STEALTH'}
                 </span>
               </button>
 
               {/* Settings Switch */}
               <button 
                 onClick={openSettingsModal}
-                className="p-3 rounded-md bg-[#200d07] border border-[#006876] text-[#8debfd] hover:bg-[#006876]/20 transition-all cursor-pointer"
+                className="w-11 h-11 rounded-md bg-[#200d07] border border-[#006876] text-[#8debfd] hover:bg-[#006876]/20 transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
                 title={t.settingsTooltip}
               >
-                <Settings className="w-5 h-5 text-[#8debfd]" />
+                <Settings className="w-4 h-4 text-[#8debfd] shrink-0" />
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
+                  OPTION
+                </span>
               </button>
 
               {/* Rules Switch */}
               <button 
                 onClick={() => setShowRules(true)}
-                className="p-3 rounded-md bg-[#200d07] border border-[#83746f]/30 text-[#eee8da] hover:border-[#fe7328] transition-all cursor-pointer"
+                className="w-11 h-11 rounded-md bg-[#200d07] border border-[#83746f]/30 text-[#eee8da] hover:border-[#fe7328] transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
                 title={t.rulesTooltip}
               >
-                <HelpCircle className="w-5 h-5 text-[#fe7328]" />
+                <HelpCircle className="w-4 h-4 text-[#fe7328] shrink-0" />
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#fe7328]">
+                  RULES
+                </span>
               </button>
 
               {/* Invite Link & QR Switch */}
               <button 
                 onClick={() => setShowInviteModal(true)}
-                className="p-3 rounded-md bg-[#200d07] border border-[#fe7328]/60 text-[#fe7328] hover:bg-[#fe7328]/20 transition-all cursor-pointer"
+                className="w-11 h-11 rounded-md bg-[#200d07] border border-[#fe7328]/60 text-[#fe7328] hover:bg-[#fe7328]/20 transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
                 title="Invite Players via Link / QR Code"
               >
-                <QrCode className="w-5 h-5 text-[#fe7328]" />
+                <QrCode className="w-4 h-4 text-[#fe7328] shrink-0" />
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
+                  INVITE
+                </span>
               </button>
             </div>
 
             <button
               onClick={exitRoom}
-              className="mt-auto p-3 rounded-md bg-[#3b1200] hover:bg-[#521b02] border border-[#fe7328]/40 text-[#fe7328] hover:text-[#fff9eb] transition-all cursor-pointer"
+              className="mt-auto w-11 h-11 rounded-md bg-[#3b1200] hover:bg-[#521b02] border border-[#fe7328]/40 text-[#fe7328] hover:text-[#fff9eb] transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
               title={t.leaveMatchTooltip}
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="w-4 h-4 shrink-0" />
+              <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
+                LEAVE
+              </span>
             </button>
           </aside>
 
