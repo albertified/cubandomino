@@ -4,7 +4,7 @@ import {
   Trophy, Users, Play, Plus, LogOut, RefreshCw, 
   Bot, ShieldAlert, Sparkles, Send, Clock, HelpCircle, 
   ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info, Music,
-  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2, Maximize2, EyeOff
+  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2, Maximize2, EyeOff, Zap
 } from 'lucide-react';
 import { Domino, GameRoom, GameStatus, Player, RoomListItem, BotDifficulty } from './types';
 import { DominoBoard } from './components/DominoBoard';
@@ -12,6 +12,7 @@ import { DominoTile } from './components/DominoTile';
 import { ScoreHistoryChart } from './components/ScoreHistoryChart';
 import { CookieDisclosure } from './components/CookieDisclosure';
 import { RulesAndSeoSection } from './components/RulesAndSeoSection';
+import { NewFeaturesSection } from './components/NewFeaturesSection';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { TermsOfServicePage } from './components/TermsOfServicePage';
 import { ContactAboutPage } from './components/ContactAboutPage';
@@ -630,6 +631,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [showRules, setShowRules] = useState<boolean>(false);
+  const [rulesModalTab, setRulesModalTab] = useState<'features' | 'rules'>('features');
   const [showInviteModal, setShowInviteModal] = useState<boolean>(false);
   const [inviteInitialBigMode, setInviteInitialBigMode] = useState<boolean>(false);
   const [invitedRoomCode, setInvitedRoomCode] = useState<string | null>(null);
@@ -1925,6 +1927,14 @@ export default function App() {
                 <span className="hidden sm:inline">{stealthActive ? "Stealth: ON" : "Stealth"}</span>
               </button>
               <button 
+                onClick={() => { setRulesModalTab('features'); setShowRules(true); }}
+                className="border border-[#fe7328]/80 hover:bg-[#fe7328]/30 px-2.5 py-1 cursor-pointer transition-colors bg-[#fe7328]/20 text-[#fe7328] font-bold flex items-center gap-1.5 rounded-xs shadow-sm font-mono text-xs"
+                title="View All New Features"
+              >
+                <Zap className="w-3.5 h-3.5 text-[#fe7328]" />
+                <span className="hidden xs:inline">Features</span>
+              </button>
+              <button 
                 onClick={openSettingsModal}
                 className="border border-[#006876] hover:bg-[#006876]/30 px-3 py-1 cursor-pointer transition-colors bg-[#200d07]/90 text-[#8debfd] font-bold flex items-center gap-1.5 rounded-xs shadow-sm"
                 title={t.settingsTooltip}
@@ -2665,14 +2675,26 @@ export default function App() {
                 </span>
               </button>
 
+              {/* New Features Switch */}
+              <button 
+                onClick={() => { setRulesModalTab('features'); setShowRules(true); }}
+                className="w-11 h-11 rounded-md bg-[#200d07] border border-[#fe7328] text-[#fe7328] hover:bg-[#fe7328]/20 transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 shadow-md"
+                title="View All New Features"
+              >
+                <Zap className="w-4 h-4 text-[#fe7328] shrink-0" />
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#fe7328]">
+                  NEW
+                </span>
+              </button>
+
               {/* Rules Switch */}
               <button 
-                onClick={() => setShowRules(true)}
+                onClick={() => { setRulesModalTab('rules'); setShowRules(true); }}
                 className="w-11 h-11 rounded-md bg-[#200d07] border border-[#83746f]/30 text-[#eee8da] hover:border-[#fe7328] transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
                 title={t.rulesTooltip}
               >
-                <HelpCircle className="w-4 h-4 text-[#fe7328] shrink-0" />
-                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#fe7328]">
+                <HelpCircle className="w-4 h-4 text-[#eee8da] shrink-0" />
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#eee8da]">
                   RULES
                 </span>
               </button>
@@ -4381,7 +4403,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* MODAL: RULES GUIDE */}
+      {/* MODAL: RULES & NEW FEATURES GUIDE */}
       <AnimatePresence>
         {showRules && (
           <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -4389,72 +4411,116 @@ export default function App() {
               initial={{ scale: 0.96, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.96, opacity: 0 }}
-              className="w-full max-w-2xl bg-[#1c1c1f] border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-5"
+              className="w-full max-w-4xl bg-[#1c1c1f] border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-5 my-auto max-h-[90vh] flex flex-col"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-white/5">
+              <div className="flex flex-wrap items-center justify-between pb-3 border-b border-white/10 gap-3 shrink-0">
                 <div className="flex items-center gap-2">
-                  <Info className="w-5 h-5 text-[#fbbf24]" />
-                  <h3 className="text-lg font-display font-extrabold text-white uppercase tracking-wider">Cuban Dominoes Rules (Doble Nueve)</h3>
-                </div>
-                <button onClick={() => setShowRules(false)} className="text-white/40 hover:text-white font-bold text-lg cursor-pointer">✕</button>
-              </div>
-
-              <div className="space-y-4 text-xs md:text-sm text-white/70 leading-relaxed max-h-[380px] overflow-y-auto pr-2 scrollbar-thin">
-                <div className="space-y-1">
-                  <h4 className="font-bold text-white uppercase text-[11px] font-mono tracking-wider flex items-center gap-1.5 text-[#fbbf24]">
-                    <span className="w-5 h-5 rounded bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[10px] text-[#fbbf24] flex items-center justify-center">1</span>
-                    DOUBLE-NINE DOMINO DECK
-                  </h4>
-                  <p className="pl-6 text-white/50">
-                    Unlike standard double-six dominoes, Cuban dominoes uses a **double-nine set** containing 55 tiles (ranging from 0-0 up to 9-9).
-                  </p>
+                  {rulesModalTab === 'features' ? (
+                    <Zap className="w-5 h-5 text-[#fe7328]" />
+                  ) : (
+                    <Info className="w-5 h-5 text-[#fbbf24]" />
+                  )}
+                  <h3 className="text-lg font-display font-extrabold text-white uppercase tracking-wider">
+                    {rulesModalTab === 'features' ? 'Platform Features & Controls' : 'Cuban Dominoes Rules (Doble Nueve)'}
+                  </h3>
                 </div>
 
-                <div className="space-y-1">
-                  <h4 className="font-bold text-white uppercase text-[11px] font-mono tracking-wider flex items-center gap-1.5 text-[#fbbf24]">
-                    <span className="w-5 h-5 rounded bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[10px] text-[#fbbf24] flex items-center justify-center">2</span>
-                    DRAWING OUT TRANSITION
-                  </h4>
-                  <p className="pl-6 text-white/50">
-                    At the start of each round, players are randomly dealt exactly **10 tiles**. The remaining 15 tiles are completely put out of play for the rest of the round, creating extreme strategy and mystery as you cannot count cards perfectly.
-                  </p>
-                </div>
-
-                <div className="space-y-1">
-                  <h4 className="font-bold text-white uppercase text-[11px] font-mono tracking-wider flex items-center gap-1.5 text-[#fbbf24]">
-                    <span className="w-5 h-5 rounded bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[10px] text-[#fbbf24] flex items-center justify-center">3</span>
-                    PARTNERSHIP COOPERATIONS
-                  </h4>
-                  <p className="pl-6 text-white/50">
-                    Players are split into two teams of two. Partners sit **directly opposite** each other (Slots 1 & 3 make Team A, Slots 2 & 4 make Team B). Partners do not share hands or cards, but play collectively.
-                  </p>
-                </div>
-
-                <div className="space-y-1">
-                  <h4 className="font-bold text-white uppercase text-[11px] font-mono tracking-wider flex items-center gap-1.5 text-[#fbbf24]">
-                    <span className="w-5 h-5 rounded bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[10px] text-[#fbbf24] flex items-center justify-center">4</span>
-                    AUTOMATIC SKIPS
-                  </h4>
-                  <p className="pl-6 text-white/50">
-                    On your turn, you must play a valid matching domino if you have one. You are **forbidden from passing manually** if you have a valid move. If you do not have any valid moves, the system will **automatically skip your turn** and alert other players.
-                  </p>
-                </div>
-
-                <div className="space-y-1">
-                  <h4 className="font-bold text-white uppercase text-[11px] font-mono tracking-wider flex items-center gap-1.5 text-[#fbbf24]">
-                    <span className="w-5 h-5 rounded bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[10px] text-[#fbbf24] flex items-center justify-center">5</span>
-                    DYNAMIC CHAIN BENDING & NAVIGATION
-                  </h4>
-                  <p className="pl-6 text-white/50">
-                    The playing board dynamically recalculates physical coordinates. Drag and zoom the board freely. The chain dynamically bends at the ends of the occupied row to wrap elegantly.
-                  </p>
+                {/* Sub-tab Navigation */}
+                <div className="flex items-center gap-1.5 p-1 bg-black/60 border border-white/10 rounded-xl font-mono text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setRulesModalTab('features')}
+                    className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                      rulesModalTab === 'features'
+                        ? 'bg-[#fe7328] text-white shadow-md'
+                        : 'text-[#fe7328] hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    New Features
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRulesModalTab('rules')}
+                    className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                      rulesModalTab === 'rules'
+                        ? 'bg-[#006876] text-white shadow-md'
+                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Info className="w-3.5 h-3.5" />
+                    Rules Guide
+                  </button>
+                  <button onClick={() => setShowRules(false)} className="text-white/40 hover:text-white font-bold text-lg cursor-pointer px-2">✕</button>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-white/5 flex justify-end">
+              {/* Modal Body */}
+              <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin">
+                {rulesModalTab === 'features' ? (
+                  <NewFeaturesSection compact={true} />
+                ) : (
+                  <div className="space-y-4 text-xs md:text-sm text-white/70 leading-relaxed">
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-white uppercase text-[11px] font-mono tracking-wider flex items-center gap-1.5 text-[#fbbf24]">
+                        <span className="w-5 h-5 rounded bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[10px] text-[#fbbf24] flex items-center justify-center">1</span>
+                        DOUBLE-NINE DOMINO DECK
+                      </h4>
+                      <p className="pl-6 text-white/50">
+                        Unlike standard double-six dominoes, Cuban dominoes uses a **double-nine set** containing 55 tiles (ranging from 0-0 up to 9-9).
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-white uppercase text-[11px] font-mono tracking-wider flex items-center gap-1.5 text-[#fbbf24]">
+                        <span className="w-5 h-5 rounded bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[10px] text-[#fbbf24] flex items-center justify-center">2</span>
+                        DRAWING OUT TRANSITION
+                      </h4>
+                      <p className="pl-6 text-white/50">
+                        At the start of each round, players are randomly dealt exactly **10 tiles**. The remaining 15 tiles are completely put out of play for the rest of the round, creating extreme strategy and mystery as you cannot count cards perfectly.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-white uppercase text-[11px] font-mono tracking-wider flex items-center gap-1.5 text-[#fbbf24]">
+                        <span className="w-5 h-5 rounded bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[10px] text-[#fbbf24] flex items-center justify-center">3</span>
+                        PARTNERSHIP COOPERATIONS
+                      </h4>
+                      <p className="pl-6 text-white/50">
+                        Players are split into two teams of two. Partners sit **directly opposite** each other (Slots 1 & 3 make Team A, Slots 2 & 4 make Team B). Partners do not share hands or cards, but play collectively.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-white uppercase text-[11px] font-mono tracking-wider flex items-center gap-1.5 text-[#fbbf24]">
+                        <span className="w-5 h-5 rounded bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[10px] text-[#fbbf24] flex items-center justify-center">4</span>
+                        AUTOMATIC SKIPS
+                      </h4>
+                      <p className="pl-6 text-white/50">
+                        On your turn, you must play a valid matching domino if you have one. You are **forbidden from passing manually** if you have a valid move. If you do not have any valid moves, the system will **automatically skip your turn** and alert other players.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-white uppercase text-[11px] font-mono tracking-wider flex items-center gap-1.5 text-[#fbbf24]">
+                        <span className="w-5 h-5 rounded bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[10px] text-[#fbbf24] flex items-center justify-center">5</span>
+                        DYNAMIC CHAIN BENDING & NAVIGATION
+                      </h4>
+                      <p className="pl-6 text-white/50">
+                        The playing board dynamically recalculates physical coordinates. Drag and zoom the board freely. The chain dynamically bends at the ends of the occupied row to wrap elegantly.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-white/10 flex items-center justify-between shrink-0">
+                <span className="text-[11px] font-mono text-white/40">
+                  Top Cuban Domino • Platform Features & Guide
+                </span>
                 <button
                   onClick={() => setShowRules(false)}
-                  className="px-5 py-2.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-sans font-bold text-xs rounded-xl shadow-md cursor-pointer uppercase tracking-wider"
+                  className="px-5 py-2.5 bg-[#fe7328] hover:bg-[#fe7328]/90 text-white font-mono font-bold text-xs rounded-xl shadow-md cursor-pointer uppercase tracking-wider"
                 >
                   {t.gotIt}
                 </button>

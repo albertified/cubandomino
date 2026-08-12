@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { BookOpen, Shield, Trophy, Users, HelpCircle, Sparkles, ChevronDown, ChevronUp, Gamepad2, Award } from 'lucide-react';
+import { BookOpen, Shield, Trophy, Users, HelpCircle, Sparkles, ChevronDown, ChevronUp, Gamepad2, Award, Zap } from 'lucide-react';
+import { NewFeaturesSection } from './NewFeaturesSection';
 
 export const RulesAndSeoSection: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'rules' | 'strategy' | 'about'>('rules');
+  const [activeTab, setActiveTab] = useState<'features' | 'rules' | 'strategy' | 'about'>('features');
   const [expandedFaq, setExpandedFaq] = useState<number | null>(0);
 
   const toggleFaq = (index: number) => {
@@ -22,12 +23,24 @@ export const RulesAndSeoSection: React.FC = () => {
             Top Cuban Domino: Double-Nine (Doble Nueve)
           </h2>
           <p className="text-xs sm:text-sm text-white/60 font-serif italic mt-1">
-            Mastering the strategy, rules, and tradition of authentic 55-tile Cuban partnership dominoes.
+            Mastering the strategy, rules, and features of authentic 55-tile Cuban partnership dominoes.
           </p>
         </div>
 
         {/* Tab Navigation Controls */}
-        <div className="flex items-center gap-1.5 p-1 bg-black/40 border border-white/10 rounded-xl font-mono text-xs font-bold shrink-0">
+        <div className="flex flex-wrap items-center justify-center gap-1.5 p-1 bg-black/40 border border-white/10 rounded-xl font-mono text-xs font-bold shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('features')}
+            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'features'
+                ? 'bg-[#fe7328] text-white shadow-md'
+                : 'text-[#fe7328] hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5" />
+            New Features
+          </button>
           <button
             type="button"
             onClick={() => setActiveTab('rules')}
@@ -66,6 +79,13 @@ export const RulesAndSeoSection: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {/* TAB CONTENT: New Features */}
+      {activeTab === 'features' && (
+        <section className="animate-fadeIn">
+          <NewFeaturesSection />
+        </section>
+      )}
 
       {/* SECTION 1: Introduction (Always visible for SEO & crawlers) */}
       <section className="space-y-4 text-xs sm:text-sm text-white/80 leading-relaxed font-sans">
