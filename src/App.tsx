@@ -4028,54 +4028,7 @@ export default function App() {
                       </div>
                     )}
 
-                    {/* MOBILE & TOUCH FRIENDLY PLAY SIDE SELECTION BANNER / POPUP */}
-                    <AnimatePresence>
-                      {pendingPlaySides !== null && selectedTileIndex !== null && myHand[selectedTileIndex] && (
-                        <motion.div
-                          initial={{ y: 60, opacity: 0 }}
-                          animate={{ y: 0, opacity: 1 }}
-                          exit={{ y: 60, opacity: 0 }}
-                          className="fixed bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 w-[92vw] max-w-md bg-[#1c1c1f]/95 border-2 border-[#006876] backdrop-blur-xl p-4 rounded-2xl shadow-2xl flex flex-col items-center gap-3 text-center"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono font-bold text-[#8debfd] uppercase tracking-wider">
-                              Choose Which End to Play
-                            </span>
-                            <span className="bg-[#006876] text-white text-[11px] font-mono px-2.5 py-0.5 rounded font-bold border border-[#8debfd]/40">
-                              Tile [{myHand[selectedTileIndex][0]}|{myHand[selectedTileIndex][1]}]
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-white/70 font-sans">
-                            This domino matches both the Left and Right ends of the board chain.
-                          </p>
-                          <div className="flex items-center gap-3 w-full">
-                            <button
-                              onClick={() => playTile(selectedTileIndex, 'left')}
-                              className="flex-1 py-3 px-4 bg-[#006876] hover:bg-[#007a8a] text-white font-mono font-bold text-xs uppercase rounded-xl shadow-lg border border-[#8debfd]/40 flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
-                            >
-                              <ArrowLeft className="w-4 h-4" />
-                              PLAY LEFT
-                            </button>
-                            <button
-                              onClick={() => playTile(selectedTileIndex, 'right')}
-                              className="flex-1 py-3 px-4 bg-[#006876] hover:bg-[#007a8a] text-white font-mono font-bold text-xs uppercase rounded-xl shadow-lg border border-[#8debfd]/40 flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
-                            >
-                              PLAY RIGHT
-                              <ArrowRight className="w-4 h-4" />
-                            </button>
-                          </div>
-                          <button
-                            onClick={() => {
-                              setSelectedTileIndex(null);
-                              setPendingPlaySides(null);
-                            }}
-                            className="text-[11px] font-mono text-white/50 hover:text-white underline cursor-pointer"
-                          >
-                            Cancel Selection
-                          </button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+
 
                     {!isMyTurn && room.status === 'playing' && (
                       <div className="mt-4 z-10">

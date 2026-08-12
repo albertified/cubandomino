@@ -16,7 +16,7 @@ interface DominoTileProps {
   fichaTheme?: FichaThemeId;
 }
 
-const pipPositions: { [key: number]: number[] } = {
+const pipPositionsVertical: { [key: number]: number[] } = {
   0: [],
   1: [4],
   2: [0, 8],
@@ -29,8 +29,26 @@ const pipPositions: { [key: number]: number[] } = {
   9: [0, 1, 2, 3, 4, 5, 6, 7, 8],
 };
 
-const PipGrid: React.FC<{ value: number; sizeClass: string; pipColor?: string }> = ({ value, sizeClass, pipColor }) => {
-  const activePips = pipPositions[value] || [];
+const pipPositionsHorizontal: { [key: number]: number[] } = {
+  0: [],
+  1: [4],
+  2: [2, 6],
+  3: [2, 4, 6],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 1, 2, 6, 7, 8],
+  7: [0, 1, 2, 4, 6, 7, 8],
+  8: [0, 1, 2, 3, 5, 6, 7, 8],
+  9: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+};
+
+const PipGrid: React.FC<{ value: number; sizeClass: string; pipColor?: string; isVertical?: boolean }> = ({ 
+  value, 
+  sizeClass, 
+  pipColor,
+  isVertical = true 
+}) => {
+  const activePips = (isVertical ? pipPositionsVertical[value] : pipPositionsHorizontal[value]) || [];
   
   return (
     <div className={`grid grid-cols-3 grid-rows-3 gap-[1px] w-full h-full p-[3px] aspect-square relative`}>
@@ -130,7 +148,7 @@ export const DominoTile: React.FC<DominoTileProps> = ({
     >
       {/* Half 1 */}
       <div className="flex-1 w-full h-full flex items-center justify-center p-[2px]">
-        <PipGrid value={val1} sizeClass={config.pipSize} pipColor={theme.pipColor} />
+        <PipGrid value={val1} sizeClass={config.pipSize} pipColor={theme.pipColor} isVertical={isVertical} />
       </div>
 
       {/* Dividing Line & Clavito/Spinner */}
@@ -144,7 +162,7 @@ export const DominoTile: React.FC<DominoTileProps> = ({
 
       {/* Half 2 */}
       <div className="flex-1 w-full h-full flex items-center justify-center p-[2px]">
-        <PipGrid value={val2} sizeClass={config.pipSize} pipColor={theme.pipColor} />
+        <PipGrid value={val2} sizeClass={config.pipSize} pipColor={theme.pipColor} isVertical={isVertical} />
       </div>
     </motion.div>
   );
