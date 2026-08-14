@@ -870,6 +870,20 @@ export default function App() {
   const [localHand, setLocalHand] = useState<{ val: Domino; originalIndex: number }[]>([]);
   const [selectedLocalIdx, setSelectedLocalIdx] = useState<number | null>(null);
 
+  // Anti-peeking / Privacy shield state
+  const [isHandHidden, setIsHandHidden] = useState<boolean>(() => {
+    return localStorage.getItem('cuban_dominoes_hide_hand') === 'true';
+  });
+  const [isPeeking, setIsPeeking] = useState<boolean>(false);
+
+  const toggleHideHand = () => {
+    setIsHandHidden(prev => {
+      const next = !prev;
+      localStorage.setItem('cuban_dominoes_hide_hand', String(next));
+      return next;
+    });
+  };
+
   // Hand movement/flipping actions
   const moveLeft = (idx: number) => {
     if (idx <= 0) return;
@@ -1873,15 +1887,22 @@ export default function App() {
     });
   }, [myHand]);
 
-  // Keyboard controls for moving/flipping/playing selected tile
+  // Keyboard controls for moving/flipping/playing selected tile and toggling hand privacy
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (selectedLocalIdx === null || !localHand[selectedLocalIdx]) return;
-      
       // Ignore if user is inside an input/textbox
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
         return;
       }
+
+      // H key toggles privacy shield (Hide Hand) anytime
+      if (e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        toggleHideHand();
+        return;
+      }
+
+      if (selectedLocalIdx === null || !localHand[selectedLocalIdx]) return;
 
       if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
         e.preventDefault();
@@ -3861,6 +3882,22 @@ export default function App() {
                             <span>🖐️ Drag to Organize: {dragAndDropEnabled ? 'ON' : 'OFF'}</span>
                           </button>
 
+                          {/* Anti-Peeking / Hand Privacy Shield Button */}
+                          <button
+                            type="button"
+                            onClick={toggleHideHand}
+                            className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer border shadow-md ${
+                              isHandHidden
+                                ? 'bg-amber-500/20 border-amber-400 text-amber-300 ring-2 ring-amber-500/30'
+                                : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+                            }`}
+                            title="Hide your hand from people looking at your screen in real life (Shortcut: H key)"
+                          >
+                            {isHandHidden ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5 text-white/50" />}
+                            <span>{isHandHidden ? 'Hand Hidden (Shield Active)' : 'Hide Hand'}</span>
+                            <span className="opacity-40 text-[8px] bg-black/50 px-1 py-0.5 rounded ml-0.5 font-mono">H</span>
+                          </button>
+
                           {/* Hand Domino Tile Scale Control */}
                           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-[#111113]/95 border border-white/10 text-white/70 shadow-xl relative z-30">
                             <span className="text-white/40">🔍 Tile Size:</span>
@@ -3946,6 +3983,49 @@ export default function App() {
                         </span>
                       </div>
                     </div>
+
+                    {/* Anti-Peeking Banner when Hand is Hidden */}
+                    {isHandHidden && (
+                      <div className="relative z-20 mb-3 bg-amber-500/10 border border-amber-500/30 px-3.5 py-2 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-lg backdrop-blur-sm animate-fadeIn">
+                        <div className="flex items-center gap-2 text-left">
+                          <div className="p-1 rounded-md bg-amber-500/20 text-amber-300 shrink-0">
+                            <ShieldAlert className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="text-[11px] font-mono font-bold text-amber-300 uppercase tracking-wide flex items-center gap-1.5">
+                              <span>Privacy Shield Active</span>
+                              <span className="text-[9px] bg-amber-400/20 px-1.5 py-0.2 rounded font-mono text-amber-200">Face Down</span>
+                            </span>
+                            <p className="text-[10px] text-white/70 font-sans mt-0.5">
+                              {isPeeking ? '👀 Peeking at hand...' : 'Tiles are protected from bystanders nearby.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onMouseDown={() => setIsPeeking(true)}
+                            onMouseUp={() => setIsPeeking(false)}
+                            onMouseLeave={() => setIsPeeking(false)}
+                            onTouchStart={() => setIsPeeking(true)}
+                            onTouchEnd={() => setIsPeeking(false)}
+                            className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 active:bg-amber-400 active:text-black text-amber-200 border border-amber-500/40 rounded-lg text-[11px] font-mono font-bold uppercase transition-all select-none cursor-pointer shadow-sm flex items-center gap-1"
+                            title="Hold to temporarily peek at your dominoes"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Hold to Peek</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={toggleHideHand}
+                            className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white border border-white/15 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer"
+                          >
+                            Reveal (H)
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     <div ref={handContainerRef} className="relative w-full overflow-hidden flex justify-center py-1">
                       <Reorder.Group
@@ -4038,6 +4118,7 @@ export default function App() {
                                   playable={true}
                                   disableHover={draggingTileKey !== null}
                                   highlighted={isSelected}
+                                  faceDown={isHandHidden && !isPeeking}
                                   fichaTheme={fichaTheme}
                                   onClick={(e) => {
                                     const now = Date.now();
@@ -4132,6 +4213,7 @@ export default function App() {
                           const rightVal = room.board.length > 0 ? room.board[room.board.length - 1][1] : null;
                           const matchesLeft = selectedItem && leftVal !== null ? (selectedItem.val[0] === leftVal || selectedItem.val[1] === leftVal) : false;
                           const matchesRight = selectedItem && rightVal !== null ? (selectedItem.val[0] === rightVal || selectedItem.val[1] === rightVal) : false;
+                          const isFaceDown = isHandHidden && !isPeeking;
 
                           return (
                             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between bg-emerald-500/10 border border-emerald-500/25 px-4 py-3 rounded-2xl gap-3 shadow-xl backdrop-blur-md">
@@ -4144,7 +4226,7 @@ export default function App() {
                                     </span>
                                     {selectedItem && isSelectedPlayable && (
                                       <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 font-mono font-bold text-xs">
-                                        [{selectedItem.val[0]}|{selectedItem.val[1]}] Selected
+                                        {isFaceDown ? "[🔒|🔒] Selected" : `[${selectedItem.val[0]}|${selectedItem.val[1]}] Selected`}
                                       </span>
                                     )}
                                   </div>
@@ -4171,7 +4253,7 @@ export default function App() {
                                       className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/30 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
                                     >
                                       <Play className="w-3.5 h-3.5 fill-current" />
-                                      <span>Place [{selectedItem.val[0]}|{selectedItem.val[1]}]</span>
+                                      <span>{isFaceDown ? "Place Selected Tile" : `Place [${selectedItem.val[0]}|${selectedItem.val[1]}]`}</span>
                                     </button>
                                   ) : matchesLeft && matchesRight ? (
                                     <div className="flex items-center gap-2">
@@ -4199,7 +4281,7 @@ export default function App() {
                                       className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/30 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
                                     >
                                       {matchesLeft ? <ArrowLeft className="w-3.5 h-3.5" /> : null}
-                                      <span>Play [{selectedItem.val[0]}|{selectedItem.val[1]}] {matchesLeft ? 'Left' : 'Right'}</span>
+                                      <span>{isFaceDown ? `Play ${matchesLeft ? 'Left' : 'Right'}` : `Play [${selectedItem.val[0]}|${selectedItem.val[1]}] ${matchesLeft ? 'Left' : 'Right'}`}</span>
                                       {matchesRight ? <ArrowRight className="w-3.5 h-3.5" /> : null}
                                     </button>
                                   )

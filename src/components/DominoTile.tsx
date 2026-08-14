@@ -14,6 +14,7 @@ interface DominoTileProps {
   size?: 'sm' | 'md' | 'lg';
   orientation?: 'horizontal' | 'vertical';
   fichaTheme?: FichaThemeId;
+  faceDown?: boolean;
 }
 
 const pipPositionsVertical: { [key: number]: number[] } = {
@@ -87,6 +88,7 @@ export const DominoTile: React.FC<DominoTileProps> = ({
   size = 'md',
   orientation,
   fichaTheme = 'havana',
+  faceDown = false,
 }) => {
   // Dimensions based on size
   const sizeClasses = {
@@ -119,6 +121,8 @@ export const DominoTile: React.FC<DominoTileProps> = ({
   const config = sizeClasses[size];
   const theme = FICHA_THEMES[fichaTheme] || FICHA_THEMES.havana;
 
+  const isFaceDown = faceDown || (val1 === -1 && val2 === -1);
+
   // Custom theme background & border states
   const baseBg = theme.tileBgClass;
   const highlightedBg = `${theme.tileBgClass} ${theme.highlightBorder}`;
@@ -130,11 +134,35 @@ export const DominoTile: React.FC<DominoTileProps> = ({
     currentBg = highlightedBg;
   } else if (playable) {
     currentBg = playableBg;
-  } else if (onClick === undefined) {
+  } else if (onClick === undefined && !isFaceDown) {
     currentBg = disabledBg;
   }
 
   const isVertical = orientation ? (orientation === 'vertical') : !isDouble;
+
+  if (isFaceDown) {
+    return (
+      <motion.div
+        whileHover={playable && !disableHover ? { y: -4 } : {}}
+        whileTap={playable ? { y: -1 } : {}}
+        onClick={onClick}
+        className={`relative select-none flex items-center justify-center overflow-hidden ${
+          isVertical ? config.tile : config.tileDouble
+        } ${config.border} ${currentBg} ${className}`}
+        id={`domino-facedown-${val1}-${val2}`}
+      >
+        {/* Decorative Face-down Engraving / Pattern */}
+        <div className="absolute inset-[3px] border border-current opacity-20 rounded-[2px] pointer-events-none flex items-center justify-center">
+          <div className="w-full h-full opacity-15 bg-[radial-gradient(#000_1px,transparent_1px)] [background-size:6px_6px]" />
+        </div>
+        {/* Subtle Central Emblem */}
+        <div 
+          className={`relative rounded-full border border-black/50 shadow-md ${config.spinner}`}
+          style={{ backgroundImage: theme.spinnerGradient }}
+        />
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
