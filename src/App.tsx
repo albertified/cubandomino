@@ -174,6 +174,36 @@ class DominoSynth {
     }
   }
 
+  // Defeat / round lost chime
+  playLose() {
+    if (!this.sfxEnabled) return;
+    try {
+      this.initCtx();
+      const ctx = this.ctx!;
+      const now = ctx.currentTime;
+      const notes = [349.23, 311.13, 261.63, 220.00]; // F4 -> Eb4 -> C4 -> A3 melancholic descending
+      
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+        
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(0.1, now + idx * 0.1 + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.35);
+        
+        osc.start(now + idx * 0.1);
+        osc.stop(now + idx * 0.1 + 0.4);
+      });
+    } catch (e) {
+      console.warn(e);
+    }
+  }
+
   // Your turn alert chime (bright warm dual chime)
   playYourTurn() {
     if (!this.sfxEnabled) return;
@@ -670,6 +700,7 @@ export default function App() {
   const [draggingTileKey, setDraggingTileKey] = useState<string | null>(null);
   const wasDraggingRef = useRef<boolean>(false);
   const lastDragEndTimeRef = useRef<number>(0);
+  const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const handContainerRef = useRef<HTMLDivElement>(null);
   const reorderGroupRef = useRef<HTMLDivElement>(null);
 
@@ -908,34 +939,6 @@ export default function App() {
 
 
 
-  // Keyboard controls for moving/flipping selected tile
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (selectedLocalIdx === null) return;
-      
-      // Ignore if user is inside an input/textbox
-      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
-        return;
-      }
-
-      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-        e.preventDefault();
-        moveLeft(selectedLocalIdx);
-      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-        e.preventDefault();
-        moveRight(selectedLocalIdx);
-      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'f' || e.key === 'F' || e.key === ' ') {
-        e.preventDefault();
-        flipTile(selectedLocalIdx);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [selectedLocalIdx, localHand.length]);
-
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const lastUpdateRef = useRef<number>(0);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -1156,7 +1159,22 @@ export default function App() {
         }
         // 3. Round ended / Won?
         if (updatedRoom.status === 'round_ended' && previousRoom.status === 'playing') {
-          audio.playWin();
+          const myIdx = updatedRoom.players.findIndex(p => p && p.id === playerId);
+          if (myIdx !== -1) {
+            const myTm = myIdx % 2;
+            const winTm = updatedRoom.roundWinnerTeam !== undefined && updatedRoom.roundWinnerTeam !== null
+              ? updatedRoom.roundWinnerTeam
+              : (updatedRoom.roundWinnerSlot !== null && updatedRoom.roundWinnerSlot >= 0 ? updatedRoom.roundWinnerSlot % 2 : null);
+            if (winTm === null) {
+              audio.playSkip(); // tie in trancado
+            } else if (myTm === winTm) {
+              audio.playWin();
+            } else {
+              audio.playLose();
+            }
+          } else {
+            audio.playWin();
+          }
         }
       }
 
@@ -1495,37 +1513,51 @@ export default function App() {
     }
   };
 
-  const selectTileToPlay = (index: number) => {
+  const confirmPlayTile = (serverIndex: number, preferredSide?: 'left' | 'right') => {
     if (!room || playerSlot === null || !isMyTurn || room.status !== 'playing') return;
 
     const myPlayer = room.players[playerSlot];
     if (!myPlayer) return;
 
-    const tile = myPlayer.hand[index];
+    const tile = myPlayer.hand[serverIndex];
+    if (!tile) return;
 
     if (room.board.length === 0) {
-      // First tile played on empty board, automatically plays!
-      playTile(index, 'right');
-    } else {
-      const leftVal = room.board[0][0];
-      const rightVal = room.board[room.board.length - 1][1];
+      // First tile played on empty board
+      playTile(serverIndex, 'right');
+      return;
+    }
 
-      // Check where this tile can be played
-      const matchesLeft = tile[0] === leftVal || tile[1] === leftVal;
-      const matchesRight = tile[0] === rightVal || tile[1] === rightVal;
+    const leftVal = room.board[0][0];
+    const rightVal = room.board[room.board.length - 1][1];
 
-      if (matchesLeft && matchesRight) {
-        // Can be played on BOTH sides, prompt user for selection
-        setSelectedTileIndex(index);
-        setPendingPlaySides({ left: true, right: true });
-      } else if (matchesLeft) {
-        // Play on Left side automatically
-        playTile(index, 'left');
-      } else if (matchesRight) {
-        // Play on Right side automatically
-        playTile(index, 'right');
+    const matchesLeft = tile[0] === leftVal || tile[1] === leftVal;
+    const matchesRight = tile[0] === rightVal || tile[1] === rightVal;
+
+    if (preferredSide) {
+      if (preferredSide === 'left' && matchesLeft) {
+        playTile(serverIndex, 'left');
+        return;
+      }
+      if (preferredSide === 'right' && matchesRight) {
+        playTile(serverIndex, 'right');
+        return;
       }
     }
+
+    if (matchesLeft && matchesRight) {
+      // Can be played on BOTH sides, prompt user for selection
+      setSelectedTileIndex(serverIndex);
+      setPendingPlaySides({ left: true, right: true });
+    } else if (matchesLeft) {
+      playTile(serverIndex, 'left');
+    } else if (matchesRight) {
+      playTile(serverIndex, 'right');
+    }
+  };
+
+  const selectTileToPlay = (index: number) => {
+    confirmPlayTile(index);
   };
 
   const playTile = async (index: number, side: 'left' | 'right') => {
@@ -1840,6 +1872,44 @@ export default function App() {
       return newLocal;
     });
   }, [myHand]);
+
+  // Keyboard controls for moving/flipping/playing selected tile
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (selectedLocalIdx === null || !localHand[selectedLocalIdx]) return;
+      
+      // Ignore if user is inside an input/textbox
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        moveLeft(selectedLocalIdx);
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        moveRight(selectedLocalIdx);
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        flipTile(selectedLocalIdx);
+      } else if (e.key === ' ' || e.key === 'Enter') {
+        const item = localHand[selectedLocalIdx];
+        const serverIdx = item?.originalIndex;
+        if (isMyTurn && room?.status === 'playing' && serverIdx !== undefined && playableIndexes.includes(serverIdx)) {
+          e.preventDefault();
+          confirmPlayTile(serverIdx);
+        } else if (e.key === ' ') {
+          e.preventDefault();
+          flipTile(selectedLocalIdx);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedLocalIdx, localHand, isMyTurn, room?.status, playableIndexes]);
 
   return (
     <div className="min-h-screen text-[#fff9eb] selection:bg-[#fe7328] selection:text-[#32170d] font-sans overflow-x-hidden">
@@ -3595,6 +3665,7 @@ export default function App() {
                         <DominoBoard 
                           board={room.board} 
                           firstTileIndex={room.firstTileIndex}
+                          roundIndex={room.scoreHistory?.length || 0}
                           onPlaySelect={(side) => {
                             if (selectedTileIndex !== null) {
                               playTile(selectedTileIndex, side);
@@ -3838,7 +3909,7 @@ export default function App() {
                           </div>
                         </div>
                         <span className="text-[10px] text-white/40 mt-1 font-sans">
-                          💡 {dragAndDropEnabled ? 'Drag tiles onto each other to reorder your fichas. Click tile or press Space to play.' : 'Click tile to select and play. Keyboard: A/D/Arrows move, Space/F flips.'} Adjust size with 🔍 controls.
+                          💡 {dragAndDropEnabled ? 'Drag tiles to organize your hand. Click once to select, double-click or click Play to place on the board.' : 'Click tile to select and play. Keyboard: A/D/Arrows move, Space/Enter plays, F flips.'} Adjust size with 🔍 controls.
                         </span>
                       </div>
                       
@@ -3925,6 +3996,11 @@ export default function App() {
                                 dragElastic={0}
                                 dragMomentum={false}
                                 dragListener={dragAndDropEnabled}
+                                onPointerDown={(e) => {
+                                  pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+                                  setSelectedLocalIdx(idx);
+                                  setSelectedTileIndex(serverIdx);
+                                }}
                                 onDragStart={() => {
                                   setDraggingTileKey(stableKey);
                                   wasDraggingRef.current = true;
@@ -3934,15 +4010,12 @@ export default function App() {
                                   lastDragEndTimeRef.current = Date.now();
                                   setTimeout(() => {
                                     wasDraggingRef.current = false;
-                                  }, 400);
+                                  }, 450);
                                 }}
                                 animate={{
                                   zIndex: isItemDragging ? 50 : 1,
                                 }}
                                 transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                                onPointerDown={() => {
-                                  setSelectedLocalIdx(idx);
-                                }}
                                 style={{
                                   marginLeft: extraX !== 0 ? `${extraX}px` : undefined,
                                   marginRight: extraX !== 0 ? `${extraX}px` : undefined,
@@ -3966,21 +4039,45 @@ export default function App() {
                                   disableHover={draggingTileKey !== null}
                                   highlighted={isSelected}
                                   fichaTheme={fichaTheme}
-                                  onClick={() => {
+                                  onClick={(e) => {
                                     const now = Date.now();
-                                    const wasDragged = wasDraggingRef.current || (now - lastDragEndTimeRef.current < 400);
-                                    wasDraggingRef.current = false;
+                                    const wasDragged = wasDraggingRef.current || (now - lastDragEndTimeRef.current < 450);
 
-                                    setSelectedLocalIdx(idx);
+                                    let pointerMoved = false;
+                                    if (pointerDownPosRef.current) {
+                                      const dist = Math.hypot(
+                                        e.clientX - pointerDownPosRef.current.x,
+                                        e.clientY - pointerDownPosRef.current.y
+                                      );
+                                      if (dist > 6) {
+                                        pointerMoved = true;
+                                      }
+                                    }
 
-                                    if (wasDragged) {
-                                      // User was drag-organizing tiles! Do not place or play domino accidentally.
+                                    if (wasDragged || pointerMoved) {
+                                      // User was dragging to organize tiles! Prevent accidental plays.
+                                      wasDraggingRef.current = false;
                                       return;
                                     }
 
-                                    // Trigger play logic if active turn and playable
+                                    const isAlreadySelected = selectedLocalIdx === idx && selectedTileIndex === serverIdx;
+
+                                    if (!isAlreadySelected) {
+                                      // First click: Safely select the tile
+                                      setSelectedLocalIdx(idx);
+                                      setSelectedTileIndex(serverIdx);
+                                      setPendingPlaySides(null);
+                                      return;
+                                    }
+
+                                    // Second click on the same already-selected playable tile: play it!
                                     if (isMyTurn && isPlayable) {
-                                      selectTileToPlay(serverIdx);
+                                      confirmPlayTile(serverIdx);
+                                    }
+                                  }}
+                                  onDoubleClick={() => {
+                                    if (isMyTurn && isPlayable) {
+                                      confirmPlayTile(serverIdx);
                                     }
                                   }}
                                   size="lg"
@@ -4026,27 +4123,95 @@ export default function App() {
                               PASO / PASS TURN
                             </button>
                           </div>
-                        ) : (
-                          <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 rounded-xl">
-                            <div className="flex items-center gap-2 text-emerald-400 text-xs font-medium font-sans">
-                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                              <span>
-                                {room.board.length === 0 
-                                  ? "It's your team's turn to start! Either you or your partner can select any tile to place the opening domino." 
-                                  : "It's your turn! Select a highlighted tile to place on the board."}
-                              </span>
+                        ) : (() => {
+                          const selectedItem = (selectedLocalIdx !== null && localHand[selectedLocalIdx]) ? localHand[selectedLocalIdx] : null;
+                          const selectedServerIdx = selectedItem?.originalIndex;
+                          const isSelectedPlayable = selectedServerIdx !== undefined && playableIndexes.includes(selectedServerIdx);
+
+                          const leftVal = room.board.length > 0 ? room.board[0][0] : null;
+                          const rightVal = room.board.length > 0 ? room.board[room.board.length - 1][1] : null;
+                          const matchesLeft = selectedItem && leftVal !== null ? (selectedItem.val[0] === leftVal || selectedItem.val[1] === leftVal) : false;
+                          const matchesRight = selectedItem && rightVal !== null ? (selectedItem.val[0] === rightVal || selectedItem.val[1] === rightVal) : false;
+
+                          return (
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between bg-emerald-500/10 border border-emerald-500/25 px-4 py-3 rounded-2xl gap-3 shadow-xl backdrop-blur-md">
+                              <div className="flex items-center gap-3">
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                                <div className="flex flex-col">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-emerald-300 font-mono tracking-wide uppercase">
+                                      {room.board.length === 0 ? "Opening Domino" : "Your Turn to Play"}
+                                    </span>
+                                    {selectedItem && isSelectedPlayable && (
+                                      <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 font-mono font-bold text-xs">
+                                        [{selectedItem.val[0]}|{selectedItem.val[1]}] Selected
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] text-white/80 font-sans mt-0.5">
+                                    {selectedItem && isSelectedPlayable
+                                      ? room.board.length === 0
+                                        ? "Click Place button, press Space/Enter, or click the tile again to start match."
+                                        : matchesLeft && matchesRight
+                                          ? "Matches both ends! Choose Left or Right below."
+                                          : `Matches ${matchesLeft ? 'Left' : 'Right'} end. Click Play button, press Space/Enter, or click tile again.`
+                                      : room.board.length === 0
+                                        ? "Drag to organize, or click any tile to select and open the match."
+                                        : "Drag freely to organize, or click a highlighted tile to select and play."}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                {selectedItem && isSelectedPlayable ? (
+                                  room.board.length === 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => confirmPlayTile(selectedServerIdx!, 'right')}
+                                      className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/30 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                                    >
+                                      <Play className="w-3.5 h-3.5 fill-current" />
+                                      <span>Place [{selectedItem.val[0]}|{selectedItem.val[1]}]</span>
+                                    </button>
+                                  ) : matchesLeft && matchesRight ? (
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => confirmPlayTile(selectedServerIdx!, 'left')}
+                                        className="px-3.5 py-2 bg-[#006876] hover:bg-[#007a8a] text-white font-mono font-bold text-xs rounded-xl shadow-lg border border-[#8debfd]/40 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                                      >
+                                        <ArrowLeft className="w-3.5 h-3.5" />
+                                        <span>Left ({leftVal})</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => confirmPlayTile(selectedServerIdx!, 'right')}
+                                        className="px-3.5 py-2 bg-[#006876] hover:bg-[#007a8a] text-white font-mono font-bold text-xs rounded-xl shadow-lg border border-[#8debfd]/40 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                                      >
+                                        <span>Right ({rightVal})</span>
+                                        <ArrowRight className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => confirmPlayTile(selectedServerIdx!, matchesLeft ? 'left' : 'right')}
+                                      className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/30 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                                    >
+                                      {matchesLeft ? <ArrowLeft className="w-3.5 h-3.5" /> : null}
+                                      <span>Play [{selectedItem.val[0]}|{selectedItem.val[1]}] {matchesLeft ? 'Left' : 'Right'}</span>
+                                      {matchesRight ? <ArrowRight className="w-3.5 h-3.5" /> : null}
+                                    </button>
+                                  )
+                                ) : (
+                                  <span className="text-[10px] font-mono text-emerald-400/80 uppercase tracking-widest hidden md:inline-block">
+                                    🖐️ Drag to organize hand
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <button
-                              onClick={passTurn}
-                              disabled={true}
-                              title="You have legal dominoes to play and cannot pass!"
-                              className="px-3 py-1.5 bg-white/5 border border-white/10 text-white/30 font-mono font-bold text-[10px] rounded-lg cursor-not-allowed uppercase tracking-wider flex items-center gap-1.5"
-                            >
-                              <SkipForward className="w-3 h-3 opacity-30" />
-                              PASS (Disabled)
-                            </button>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     )}
 
@@ -4234,173 +4399,541 @@ export default function App() {
 
       {/* OVERLAY MODAL: ROUND ENDED RESULT */}
       <AnimatePresence>
-        {room && room.status === 'round_ended' && (
-          <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <motion.div 
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              className="w-full max-w-md bg-[#1c1c1f] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-5 text-center"
-            >
-              <div className="space-y-2">
-                <div className="w-16 h-16 rounded-full bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-3xl flex items-center justify-center mx-auto text-[#fbbf24]">
-                  <Crown className="w-8 h-8 text-[#fbbf24]" />
-                </div>
-                <h3 className="text-xl font-display font-extrabold tracking-tight text-white uppercase">
-                  {room.roundBlocked ? 'Round Blocked (Trancado)' : 'Round Won!'}
-                </h3>
-                <p className="text-[10px] font-mono tracking-widest uppercase text-white/40">Results Summary</p>
-              </div>
+        {room && room.status === 'round_ended' && (() => {
+          // 1. Determine Winning Team
+          const winningTeam = room.roundWinnerTeam !== undefined && room.roundWinnerTeam !== null
+            ? room.roundWinnerTeam
+            : (room.roundWinnerSlot !== null && room.roundWinnerSlot >= 0 
+                ? room.roundWinnerSlot % 2 
+                : (room.scoreHistory && room.scoreHistory.length > 0 
+                    ? room.scoreHistory[room.scoreHistory.length - 1]?.winnerTeam 
+                    : (room.startingTeam !== undefined ? room.startingTeam : null)
+                  )
+              );
 
-              <div className="bg-[#111113] p-4 rounded-xl border border-white/5 text-sm space-y-4 text-left">
-                <div className="flex items-center justify-between font-bold">
-                  <span className="text-white/50">Outcome</span>
-                  <div className="text-[#fbbf24] text-right flex flex-col items-end gap-1">
-                    {room.roundWinnerSlot !== null && room.roundWinnerSlot !== -1 ? (
-                      <>
+          // 2. Determine Current User's Slot & Team
+          const mySlot = playerSlot !== null && playerSlot >= 0 ? playerSlot : room.players.findIndex(p => p && p.id === playerId);
+          const isPlayer = mySlot !== -1 && mySlot !== null;
+          const myTeam = isPlayer ? mySlot % 2 : null;
+
+          // 3. Round Outcome classification
+          const isTie = room.roundBlocked && room.roundPointsEarned === 0;
+          const isWinner = !isTie && myTeam !== null && winningTeam !== null && myTeam === winningTeam;
+          const isLoser = !isTie && myTeam !== null && winningTeam !== null && myTeam !== winningTeam;
+          const isSpectator = myTeam === null;
+
+          // 4. Calculate individual player hand values & remaining pips
+          const playerPipData = room.players.map((p, idx) => {
+            if (!p) return { name: `Player ${idx + 1}`, hand: [], count: 0, pipSum: 0, slot: idx, team: idx % 2, isBot: false, botDifficulty: undefined, isLastDominoWinner: false, dominoStreak: 0 };
+            const hand = p.hand || [];
+            const pipSum = hand.reduce((sum, [v1, v2]) => sum + (v1 >= 0 ? v1 + v2 : 0), 0);
+            return {
+              name: p.name,
+              hand,
+              count: hand.length,
+              pipSum,
+              slot: idx,
+              team: idx % 2,
+              isBot: p.type === 'bot',
+              botDifficulty: p.botDifficulty,
+              isLastDominoWinner: p.isLastDominoWinner,
+              dominoStreak: p.dominoStreak
+            };
+          });
+
+          const activePlayers = playerPipData.filter((_, idx) => room.players[idx] !== null);
+          const minIndividualPipSum = activePlayers.length > 0 ? Math.min(...activePlayers.map(p => p.pipSum)) : 0;
+
+          const team0TotalPips = (playerPipData[0]?.pipSum || 0) + (playerPipData[2]?.pipSum || 0);
+          const team1TotalPips = (playerPipData[1]?.pipSum || 0) + (playerPipData[3]?.pipSum || 0);
+
+          // Dynamic Title & Header Copy
+          let headerTitle = 'Round Won!';
+          let headerSubtitle = '';
+          let headerBadge = 'ROUND OUTCOME';
+          let headerTheme: 'winner' | 'loser' | 'tie' | 'spectator' = 'winner';
+
+          if (isTie) {
+            headerTheme = 'tie';
+            headerTitle = 'Round Blocked (Tie)';
+            headerSubtitle = 'Both teams tied for the lowest individual hand count. Zero points awarded.';
+            headerBadge = 'TIE • EMPATE EN TRANCADO';
+          } else if (isWinner) {
+            headerTheme = 'winner';
+            headerTitle = room.roundBlocked ? 'Round Won! (Blocked)' : 'Round Won!';
+            headerBadge = `VICTORY • TEAM ${myTeam === 0 ? 'A' : 'B'}`;
+            if (room.roundBlocked) {
+              headerSubtitle = 'Your team held the lowest individual hand count and won the Trancado!';
+            } else if (room.roundWinnerSlot === mySlot) {
+              headerSubtitle = 'You played your last tile and dominoed for your team!';
+            } else {
+              headerSubtitle = `Your partner ${room.players[room.roundWinnerSlot || 0]?.name || 'Partner'} played their last tile and dominoed!`;
+            }
+          } else if (isLoser) {
+            headerTheme = 'loser';
+            headerTitle = room.roundBlocked ? 'Round Lost (Blocked)' : 'Round Lost';
+            headerBadge = `DEFEAT • TEAM ${myTeam === 0 ? 'A' : 'B'}`;
+            if (room.roundBlocked) {
+              headerSubtitle = `Team ${winningTeam === 0 ? 'A' : 'B'} held the lowest individual hand count in the Trancado.`;
+            } else {
+              headerSubtitle = `Team ${winningTeam === 0 ? 'A' : 'B'} (${room.players[room.roundWinnerSlot || 0]?.name || 'Opponent'}) played their last tile first.`;
+            }
+          } else {
+            // Spectator
+            headerTheme = 'spectator';
+            headerTitle = room.roundBlocked
+              ? (winningTeam !== null ? `Round Blocked (Team ${winningTeam === 0 ? 'A' : 'B'} Won)` : 'Round Blocked (Tie)')
+              : `Team ${winningTeam === 0 ? 'A' : 'B'} Won Round!`;
+            headerBadge = 'SPECTATOR VIEW';
+            headerSubtitle = room.roundBlocked
+              ? 'Game reached Trancado with no valid plays remaining.'
+              : `${room.players[room.roundWinnerSlot || 0]?.name || 'Player'} dominoed.`;
+          }
+
+          return (
+            <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <motion.div 
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                className="w-full max-w-xl bg-[#1c1c1f] border border-white/10 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4 text-center max-h-[90vh] overflow-y-auto scrollbar-thin my-auto"
+              >
+                {/* Header with Icon */}
+                <div className="space-y-1.5">
+                  <div className={`w-14 h-14 rounded-full border text-2xl flex items-center justify-center mx-auto transition-all ${
+                    headerTheme === 'winner'
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.2)]'
+                      : headerTheme === 'loser'
+                      ? 'bg-rose-500/10 border-rose-500/30 text-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.15)]'
+                      : 'bg-teal-500/10 border-teal-500/30 text-teal-400 shadow-[0_0_20px_rgba(20,184,166,0.15)]'
+                  }`}>
+                    {headerTheme === 'winner' ? (
+                      <Crown className="w-7 h-7 text-amber-400" />
+                    ) : headerTheme === 'loser' ? (
+                      <ShieldAlert className="w-7 h-7 text-rose-400" />
+                    ) : (
+                      <Swords className="w-7 h-7 text-teal-400" />
+                    )}
+                  </div>
+
+                  <div className="inline-block">
+                    <span className={`text-[9px] font-mono font-bold tracking-widest uppercase px-2.5 py-0.5 rounded-full border ${
+                      headerTheme === 'winner'
+                        ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                        : headerTheme === 'loser'
+                        ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                        : 'bg-white/5 text-white/60 border-white/10'
+                    }`}>
+                      {headerBadge}
+                    </span>
+                  </div>
+
+                  <h3 className={`text-xl sm:text-2xl font-display font-extrabold tracking-tight uppercase ${
+                    headerTheme === 'winner' ? 'text-amber-300' : headerTheme === 'loser' ? 'text-rose-200' : 'text-white'
+                  }`}>
+                    {headerTitle}
+                  </h3>
+                  <p className="text-xs text-white/60 font-sans max-w-md mx-auto">
+                    {headerSubtitle}
+                  </p>
+                </div>
+
+                {/* Outcome summary card */}
+                <div className="bg-[#111113] p-4 rounded-xl border border-white/5 space-y-3.5 text-left">
+                  <div className="flex items-center justify-between font-bold border-b border-white/5 pb-2.5 text-xs sm:text-sm">
+                    <span className="text-white/50">Round Outcome</span>
+                    <div className="text-right flex flex-col items-end gap-0.5">
+                      {room.roundWinnerSlot !== null && room.roundWinnerSlot !== -1 ? (
                         <span className="flex items-center gap-1 font-extrabold text-amber-300">
                           👑 {room.players[room.roundWinnerSlot]?.name} Dominoed!
                         </span>
-                        {room.players[room.roundWinnerSlot]?.dominoStreak && (room.players[room.roundWinnerSlot]?.dominoStreak || 0) > 1 && (
-                          <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-red-500 text-white text-[10px] font-mono font-black shadow animate-pulse">
-                            🔥 {room.players[room.roundWinnerSlot]?.dominoStreak}x Domino Streak!
+                      ) : isTie ? (
+                        <span className="font-bold text-teal-300">Trancado (Tie — Double points next round)</span>
+                      ) : (
+                        <span className="font-bold text-amber-300">Trancado (Lowest individual hand wins)</span>
+                      )}
+                      {room.roundWinnerSlot !== null && room.roundWinnerSlot !== -1 && room.players[room.roundWinnerSlot]?.dominoStreak && (room.players[room.roundWinnerSlot]?.dominoStreak || 0) > 1 && (
+                        <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-red-500 text-white text-[9px] font-mono font-black shadow animate-pulse">
+                          🔥 {room.players[room.roundWinnerSlot]?.dominoStreak}x Domino Streak!
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {room.scoreMultiplier && room.scoreMultiplier > 1 && !isTie && (
+                    <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono font-bold text-center">
+                      ⚡ Multiplier applied! Awarded points were DOUBLED ({room.scoreMultiplier}x) from previous tie!
+                    </div>
+                  )}
+
+                  {isTie && (
+                    <div className="p-2.5 rounded-lg bg-teal-500/10 border border-teal-500/30 text-teal-300 text-xs font-mono font-bold text-center">
+                      🤝 TIE IN TRANCADO! Zero points awarded this round. Next round points are DOUBLED ({(room.scoreMultiplier || 1)}x)!
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between font-bold text-xs sm:text-sm">
+                    <span className="text-white/50">Points Earned This Round</span>
+                    <span className={`text-base sm:text-lg font-mono font-black ${room.roundPointsEarned > 0 ? (headerTheme === 'loser' ? 'text-rose-400' : 'text-amber-400') : 'text-white/40'}`}>
+                      {room.roundPointsEarned > 0 ? `+${room.roundPointsEarned} pts (Team ${winningTeam === 0 ? 'A' : 'B'})` : '0 pts'}
+                    </span>
+                  </div>
+
+                  {/* INDIVIDUAL PLAYER POINTS & HANDS BREAKDOWN */}
+                  <div className="pt-2 border-t border-white/5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-[#fbbf24]" />
+                        {room.roundBlocked ? 'Trancado Player Pip Counts & Hands' : 'Remaining Player Hand Values'}
+                      </span>
+                      <span className="text-[9px] font-mono text-white/30">
+                        {room.roundBlocked ? 'Lowest hand wins' : 'Losing pips awarded'}
+                      </span>
+                    </div>
+
+                    {/* 2-Column Team Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {/* TEAM A PANEL */}
+                      <div className={`p-2.5 rounded-xl border space-y-2 ${
+                        winningTeam === 0 && !isTie
+                          ? 'bg-[#fbbf24]/5 border-[#fbbf24]/30'
+                          : 'bg-[#1c1c1f] border-white/5'
+                      }`}>
+                        <div className="flex items-center justify-between border-b border-white/5 pb-1">
+                          <span className="text-[10px] font-mono font-bold text-[#fbbf24] uppercase flex items-center gap-1">
+                            Team A (Slots 1 & 3)
+                            {winningTeam === 0 && !isTie && <span className="text-[8px] bg-[#fbbf24] text-black px-1.5 py-0.5 rounded font-black">ROUND WINNER</span>}
                           </span>
-                        )}
-                      </>
-                    ) : room.roundPointsEarned === 0 ? (
-                      'Trancado (Tie! Double points next round)'
-                    ) : (
-                      'Trancado (Lowest individual hand wins)'
-                    )}
-                  </div>
-                </div>
+                          <span className="text-[10px] font-mono font-bold text-white/70">
+                            Total: {team0TotalPips} pts
+                          </span>
+                        </div>
 
-                {room.scoreMultiplier && room.scoreMultiplier > 1 && (
-                  <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono font-bold text-center">
-                    ⚡ TIE IN TRANCADO! Zero points awarded. Next round points are DOUBLED ({room.scoreMultiplier}x)!
-                  </div>
-                )}
+                        {/* Player 0 & Player 2 */}
+                        {[0, 2].map((slotIdx) => {
+                          const p = playerPipData[slotIdx];
+                          const rawP = room.players[slotIdx];
+                          if (!rawP) return null;
+                          const isLowest = room.roundBlocked && p.pipSum === minIndividualPipSum && !isTie;
+                          const isDominoWinner = !room.roundBlocked && room.roundWinnerSlot === slotIdx;
+                          const isMe = slotIdx === mySlot;
 
-                <div className="border-t border-white/5 pt-3 flex items-center justify-between font-bold">
-                  <span className="text-white/50">Points Earned</span>
-                  <span className="text-red-400 text-lg font-mono">+{room.roundPointsEarned} pts</span>
-                </div>
+                          return (
+                            <div key={slotIdx} className={`p-2 rounded-lg border text-xs space-y-1.5 ${
+                              isLowest || isDominoWinner
+                                ? 'bg-amber-500/10 border-amber-500/40'
+                                : isMe
+                                ? 'bg-white/5 border-white/15'
+                                : 'bg-black/30 border-white/5'
+                            }`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1 min-w-0">
+                                  <span className="font-bold text-white truncate max-w-[110px]">
+                                    {p.name}
+                                  </span>
+                                  {isMe && <span className="text-[8px] font-mono font-bold text-[#fe7328] bg-[#fe7328]/10 border border-[#fe7328]/30 px-1 rounded">YOU</span>}
+                                  {p.isBot && <span className="text-[8px] font-mono text-white/40">BOT</span>}
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {isLowest && (
+                                    <span className="text-[8px] font-mono font-black bg-amber-400 text-black px-1.5 py-0.5 rounded shadow-sm">
+                                      👑 LOWEST
+                                    </span>
+                                  )}
+                                  {isDominoWinner && (
+                                    <span className="text-[8px] font-mono font-black bg-amber-400 text-black px-1.5 py-0.5 rounded shadow-sm">
+                                      👑 DOMINO
+                                    </span>
+                                  )}
+                                  <span className="font-mono font-bold text-white text-xs">
+                                    {p.pipSum} pts
+                                  </span>
+                                </div>
+                              </div>
 
-                <div className="border-t border-white/5 pt-3">
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-white/30 mb-2">Combined Match Scores</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-[#1c1c1f] p-3 rounded-lg border border-white/5 text-center">
-                      <span className="text-[10px] font-mono text-[#fbbf24] block font-bold uppercase mb-1">Team A</span>
-                      <span className="text-lg font-bold text-white font-mono">{room.scores[0]} pts</span>
+                              {/* Mini Tiles list */}
+                              <div className="flex flex-wrap items-center gap-1">
+                                {p.hand.length === 0 ? (
+                                  <span className="text-[9px] font-mono text-white/30 italic">0 tiles (Dominoed)</span>
+                                ) : (
+                                  p.hand.map(([v1, v2], tIdx) => (
+                                    <span
+                                      key={tIdx}
+                                      className="inline-flex items-center px-1.5 py-0.5 rounded bg-black/80 border border-white/15 font-mono text-[9px] font-bold text-amber-200/90 shadow-sm"
+                                    >
+                                      {v1 >= 0 ? `${v1}|${v2}` : '?|?'}
+                                    </span>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* TEAM B PANEL */}
+                      <div className={`p-2.5 rounded-xl border space-y-2 ${
+                        winningTeam === 1 && !isTie
+                          ? 'bg-teal-950/20 border-teal-500/30'
+                          : 'bg-[#1c1c1f] border-white/5'
+                      }`}>
+                        <div className="flex items-center justify-between border-b border-white/5 pb-1">
+                          <span className="text-[10px] font-mono font-bold text-teal-400 uppercase flex items-center gap-1">
+                            Team B (Slots 2 & 4)
+                            {winningTeam === 1 && !isTie && <span className="text-[8px] bg-teal-400 text-black px-1.5 py-0.5 rounded font-black">ROUND WINNER</span>}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-white/70">
+                            Total: {team1TotalPips} pts
+                          </span>
+                        </div>
+
+                        {/* Player 1 & Player 3 */}
+                        {[1, 3].map((slotIdx) => {
+                          const p = playerPipData[slotIdx];
+                          const rawP = room.players[slotIdx];
+                          if (!rawP) return null;
+                          const isLowest = room.roundBlocked && p.pipSum === minIndividualPipSum && !isTie;
+                          const isDominoWinner = !room.roundBlocked && room.roundWinnerSlot === slotIdx;
+                          const isMe = slotIdx === mySlot;
+
+                          return (
+                            <div key={slotIdx} className={`p-2 rounded-lg border text-xs space-y-1.5 ${
+                              isLowest || isDominoWinner
+                                ? 'bg-teal-500/10 border-teal-500/40'
+                                : isMe
+                                ? 'bg-white/5 border-white/15'
+                                : 'bg-black/30 border-white/5'
+                            }`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1 min-w-0">
+                                  <span className="font-bold text-white truncate max-w-[110px]">
+                                    {p.name}
+                                  </span>
+                                  {isMe && <span className="text-[8px] font-mono font-bold text-[#fe7328] bg-[#fe7328]/10 border border-[#fe7328]/30 px-1 rounded">YOU</span>}
+                                  {p.isBot && <span className="text-[8px] font-mono text-white/40">BOT</span>}
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {isLowest && (
+                                    <span className="text-[8px] font-mono font-black bg-teal-400 text-black px-1.5 py-0.5 rounded shadow-sm">
+                                      👑 LOWEST
+                                    </span>
+                                  )}
+                                  {isDominoWinner && (
+                                    <span className="text-[8px] font-mono font-black bg-teal-400 text-black px-1.5 py-0.5 rounded shadow-sm">
+                                      👑 DOMINO
+                                    </span>
+                                  )}
+                                  <span className="font-mono font-bold text-white text-xs">
+                                    {p.pipSum} pts
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Mini Tiles list */}
+                              <div className="flex flex-wrap items-center gap-1">
+                                {p.hand.length === 0 ? (
+                                  <span className="text-[9px] font-mono text-white/30 italic">0 tiles (Dominoed)</span>
+                                ) : (
+                                  p.hand.map(([v1, v2], tIdx) => (
+                                    <span
+                                      key={tIdx}
+                                      className="inline-flex items-center px-1.5 py-0.5 rounded bg-black/80 border border-white/15 font-mono text-[9px] font-bold text-teal-200/90 shadow-sm"
+                                    >
+                                      {v1 >= 0 ? `${v1}|${v2}` : '?|?'}
+                                    </span>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="bg-[#1c1c1f] p-3 rounded-lg border border-white/5 text-center">
-                      <span className="text-[10px] font-mono text-teal-400 block font-bold uppercase mb-1">Team B</span>
-                      <span className="text-lg font-bold text-white font-mono">{room.scores[1]} pts</span>
+                  </div>
+
+                  {/* Combined Match Score Summary */}
+                  <div className="border-t border-white/5 pt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 font-bold">Overall Match Score</span>
+                      <span className="text-[10px] font-mono text-white/40">Target: {room.targetScore} pts</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className={`p-2.5 rounded-xl border text-center ${
+                        room.scores[0] > room.scores[1]
+                          ? 'bg-[#fbbf24]/10 border-[#fbbf24]/40'
+                          : 'bg-[#1c1c1f] border-white/5'
+                      }`}>
+                        <span className="text-[10px] font-mono text-[#fbbf24] block font-bold uppercase mb-0.5">Team A</span>
+                        <span className="text-lg font-bold text-white font-mono">{room.scores[0]} pts</span>
+                      </div>
+                      <div className={`p-2.5 rounded-xl border text-center ${
+                        room.scores[1] > room.scores[0]
+                          ? 'bg-teal-950/20 border-teal-500/40'
+                          : 'bg-[#1c1c1f] border-white/5'
+                      }`}>
+                        <span className="text-[10px] font-mono text-teal-400 block font-bold uppercase mb-0.5">Team B</span>
+                        <span className="text-lg font-bold text-white font-mono">{room.scores[1]} pts</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <button
-                onClick={startNextRound}
-                disabled={loading}
-                className="w-full py-3.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-sans font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg uppercase tracking-wider font-mono"
-              >
-                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-[#111113]" />}
-                Deal Next Round
-              </button>
-            </motion.div>
-          </div>
-        )}
+                {/* Action Button */}
+                <button
+                  onClick={startNextRound}
+                  disabled={loading}
+                  className={`w-full py-3.5 text-white font-sans font-bold text-xs sm:text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg uppercase tracking-wider font-mono ${
+                    headerTheme === 'winner'
+                      ? 'bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113]'
+                      : headerTheme === 'loser'
+                      ? 'bg-[#fe7328] hover:bg-[#fe7328]/90 text-white'
+                      : 'bg-[#006876] hover:bg-[#006876]/90 text-white'
+                  }`}
+                >
+                  {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
+                  Deal Next Round
+                </button>
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
 
       {/* OVERLAY MODAL: GAME OVER MATCH RESULTS */}
       <AnimatePresence>
-        {room && room.status === 'game_over' && (
-          <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4">
-            <motion.div 
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              className="w-full max-w-xl bg-[#1c1c1f] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-6 text-center max-h-[90vh] overflow-y-auto scrollbar-thin"
-            >
-              <div className="space-y-2">
-                <div className="w-16 h-16 rounded-full bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-3xl flex items-center justify-center mx-auto text-[#fbbf24]">
-                  🏆
-                </div>
-                <h3 className="text-2xl font-display font-extrabold tracking-tight text-white uppercase">
-                  Match Victory!
-                </h3>
-                <p className="text-[10px] font-mono tracking-widest uppercase text-white/40">Full Match Recap & Point History</p>
-              </div>
+        {room && room.status === 'game_over' && (() => {
+          const matchWinningTeam = room.scores[0] >= room.targetScore ? 0 : 1;
+          const mySlot = playerSlot !== null && playerSlot >= 0 ? playerSlot : room.players.findIndex(p => p && p.id === playerId);
+          const isPlayer = mySlot !== -1 && mySlot !== null;
+          const myTeam = isPlayer ? mySlot % 2 : null;
+          const isMatchWinner = myTeam !== null && myTeam === matchWinningTeam;
+          const isMatchLoser = myTeam !== null && myTeam !== matchWinningTeam;
 
-              <div className="bg-[#111113] p-4 rounded-xl border border-white/5 space-y-4 text-left">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className={`p-4 rounded-xl border ${room.scores[0] >= room.targetScore ? 'bg-[#fbbf24]/5 border-[#fbbf24]/50 ring-2 ring-[#fbbf24]' : 'bg-[#1c1c1f] border-white/5 opacity-50'}`}>
-                    <span className="text-[10px] font-mono text-[#fbbf24] block font-bold uppercase mb-1">Team A</span>
-                    <span className="text-2xl font-bold text-white font-mono">{room.scores[0]} pts</span>
-                    <span className="text-[9px] block text-white/40 mt-1 truncate">
-                      {room.players[0]?.name} & {room.players[2]?.name}
-                    </span>
-                    {room.scores[0] >= room.targetScore && (
-                      <span className="inline-block mt-2 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 bg-[#fbbf24] text-[#111113] rounded-full">
-                        WINNERS
-                      </span>
-                    )}
+          let matchTitle = 'Match Victory!';
+          let matchSubtitle = 'Full Match Recap & Point History';
+          let matchBadge = 'MATCH COMPLETED';
+
+          if (isMatchWinner) {
+            matchTitle = 'Match Victory! 🏆';
+            matchBadge = `CHAMPIONS • TEAM ${myTeam === 0 ? 'A' : 'B'}`;
+            matchSubtitle = `Congratulations! Your team reached ${room.scores[matchWinningTeam]} points and won the match!`;
+          } else if (isMatchLoser) {
+            matchTitle = 'Match Defeat';
+            matchBadge = `FINAL RESULTS • TEAM ${myTeam === 0 ? 'A' : 'B'}`;
+            matchSubtitle = `Team ${matchWinningTeam === 0 ? 'A' : 'B'} reached ${room.scores[matchWinningTeam]} points and won the match.`;
+          } else {
+            matchTitle = `Team ${matchWinningTeam === 0 ? 'A' : 'B'} Won the Match! 🏆`;
+            matchBadge = 'SPECTATOR RECAP';
+            matchSubtitle = `Target of ${room.targetScore} points reached.`;
+          }
+
+          return (
+            <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4">
+              <motion.div 
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                className="w-full max-w-xl bg-[#1c1c1f] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-6 text-center max-h-[90vh] overflow-y-auto scrollbar-thin my-auto"
+              >
+                <div className="space-y-2">
+                  <div className={`w-16 h-16 rounded-full border text-3xl flex items-center justify-center mx-auto ${
+                    isMatchWinner
+                      ? 'bg-[#fbbf24]/10 border-[#fbbf24]/30 text-[#fbbf24] shadow-[0_0_25px_rgba(251,191,36,0.25)]'
+                      : isMatchLoser
+                      ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                      : 'bg-[#fbbf24]/10 border-[#fbbf24]/20 text-[#fbbf24]'
+                  }`}>
+                    {isMatchWinner ? '🏆' : isMatchLoser ? '🛡️' : '🏆'}
                   </div>
 
-                  <div className={`p-4 rounded-xl border ${room.scores[1] >= room.targetScore ? 'bg-teal-950/20 border-teal-500/50 ring-2 ring-teal-500' : 'bg-[#1c1c1f] border-white/5 opacity-50'}`}>
-                    <span className="text-[10px] font-mono text-teal-400 block font-bold uppercase mb-1">Team B</span>
-                    <span className="text-2xl font-bold text-white font-mono">{room.scores[1]} pts</span>
-                    <span className="text-[9px] block text-white/40 mt-1 truncate">
-                      {room.players[1]?.name} & {room.players[3]?.name}
+                  <div className="inline-block">
+                    <span className={`text-[9px] font-mono font-bold tracking-widest uppercase px-2.5 py-0.5 rounded-full border ${
+                      isMatchWinner
+                        ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                        : isMatchLoser
+                        ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                        : 'bg-white/5 text-white/60 border-white/10'
+                    }`}>
+                      {matchBadge}
                     </span>
-                    {room.scores[1] >= room.targetScore && (
-                      <span className="inline-block mt-2 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 bg-teal-500 text-slate-950 rounded-full">
-                        WINNERS
+                  </div>
+
+                  <h3 className={`text-2xl font-display font-extrabold tracking-tight uppercase ${
+                    isMatchWinner ? 'text-amber-300' : isMatchLoser ? 'text-rose-200' : 'text-white'
+                  }`}>
+                    {matchTitle}
+                  </h3>
+                  <p className="text-xs text-white/60 font-sans max-w-md mx-auto">{matchSubtitle}</p>
+                </div>
+
+                <div className="bg-[#111113] p-4 rounded-xl border border-white/5 space-y-4 text-left">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className={`p-4 rounded-xl border ${room.scores[0] >= room.targetScore ? 'bg-[#fbbf24]/5 border-[#fbbf24]/50 ring-2 ring-[#fbbf24]' : 'bg-[#1c1c1f] border-white/5 opacity-50'}`}>
+                      <span className="text-[10px] font-mono text-[#fbbf24] block font-bold uppercase mb-1">Team A</span>
+                      <span className="text-2xl font-bold text-white font-mono">{room.scores[0]} pts</span>
+                      <span className="text-[9px] block text-white/40 mt-1 truncate">
+                        {room.players[0]?.name} & {room.players[2]?.name}
                       </span>
-                    )}
+                      {room.scores[0] >= room.targetScore && (
+                        <span className="inline-block mt-2 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 bg-[#fbbf24] text-[#111113] rounded-full">
+                          WINNERS
+                        </span>
+                      )}
+                    </div>
+
+                    <div className={`p-4 rounded-xl border ${room.scores[1] >= room.targetScore ? 'bg-teal-950/20 border-teal-500/50 ring-2 ring-teal-500' : 'bg-[#1c1c1f] border-white/5 opacity-50'}`}>
+                      <span className="text-[10px] font-mono text-teal-400 block font-bold uppercase mb-1">Team B</span>
+                      <span className="text-2xl font-bold text-white font-mono">{room.scores[1]} pts</span>
+                      <span className="text-[9px] block text-white/40 mt-1 truncate">
+                        {room.players[1]?.name} & {room.players[3]?.name}
+                      </span>
+                      {room.scores[1] >= room.targetScore && (
+                        <span className="inline-block mt-2 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 bg-teal-500 text-slate-950 rounded-full">
+                          WINNERS
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Animated Line Graph Component */}
+                  <div className="pt-2">
+                    <ScoreHistoryChart
+                      scoreHistory={room.scoreHistory}
+                      targetScore={room.targetScore}
+                      teamAName="Team A"
+                      teamBName="Team B"
+                      currentScores={room.scores}
+                    />
                   </div>
                 </div>
 
-                {/* Animated Line Graph Component */}
-                <div className="pt-2">
-                  <ScoreHistoryChart
-                    scoreHistory={room.scoreHistory}
-                    targetScore={room.targetScore}
-                    teamAName="Team A"
-                    teamBName="Team B"
-                    currentScores={room.scores}
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                {isHost ? (
+                <div className="flex gap-3">
+                  {isHost ? (
+                    <button
+                      onClick={resetGame}
+                      className="flex-1 py-3.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-sans font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg uppercase tracking-wider font-mono"
+                    >
+                      <RefreshCw className="w-4 h-4 text-[#111113]" />
+                      Rematch
+                    </button>
+                  ) : (
+                    <div className="flex-1 py-3.5 bg-white/5 border border-white/10 text-white/40 font-mono text-xs rounded-xl flex items-center justify-center gap-2 uppercase tracking-wider">
+                      <RefreshCw className="w-3.5 h-3.5 text-white/30 animate-spin" />
+                      Waiting for Host...
+                    </div>
+                  )}
+                  
                   <button
-                    onClick={resetGame}
-                    className="flex-1 py-3.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-sans font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg uppercase tracking-wider font-mono"
+                    onClick={exitRoom}
+                    className="px-6 py-3.5 bg-[#111113] hover:bg-white/5 border border-white/10 text-white font-semibold text-sm rounded-xl transition-all cursor-pointer uppercase tracking-wider font-mono"
                   >
-                    <RefreshCw className="w-4 h-4 text-[#111113]" />
-                    Rematch
+                    Main Menu
                   </button>
-                ) : (
-                  <div className="flex-1 py-3.5 bg-white/5 border border-white/10 text-white/40 font-mono text-xs rounded-xl flex items-center justify-center gap-2 uppercase tracking-wider">
-                    <RefreshCw className="w-3.5 h-3.5 text-white/30 animate-spin" />
-                    Waiting for Host...
-                  </div>
-                )}
-                
-                <button
-                  onClick={exitRoom}
-                  className="px-6 py-3.5 bg-[#111113] hover:bg-white/5 border border-white/10 text-white font-semibold text-sm rounded-xl transition-all cursor-pointer uppercase tracking-wider font-mono"
-                >
-                  Main Menu
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
 
       {/* MODAL: RULES & NEW FEATURES GUIDE */}

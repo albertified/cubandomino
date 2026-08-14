@@ -353,6 +353,7 @@ function dealRound(room: GameRoom) {
   room.board = [];
   room.firstTileIndex = 0;
   room.roundWinnerSlot = null;
+  room.roundWinnerTeam = null;
   room.roundBlocked = false;
   room.roundPointsEarned = 0;
   room.consecutivePasses = 0;
@@ -406,6 +407,7 @@ function handleRoundWin(room: GameRoom, winnerSlot: number) {
 
   room.scores[winningTeam] += totalPoints;
   room.roundWinnerSlot = winnerSlot;
+  room.roundWinnerTeam = winningTeam;
   room.roundBlocked = false;
   room.roundPointsEarned = totalPoints;
   room.status = 'round_ended';
@@ -497,6 +499,7 @@ function handleTrancado(room: GameRoom) {
     room.scoreMultiplier = nextMultiplier;
 
     room.roundWinnerSlot = -1;
+    room.roundWinnerTeam = null;
     room.roundBlocked = true;
     room.roundPointsEarned = 0;
     room.status = 'round_ended';
@@ -533,6 +536,7 @@ function handleTrancado(room: GameRoom) {
 
   room.scores[winningTeam] += totalPoints;
   room.roundWinnerSlot = -1; // -1 represents block/trancado
+  room.roundWinnerTeam = winningTeam;
   room.roundBlocked = true;
   room.roundPointsEarned = totalPoints;
   room.status = 'round_ended';
@@ -885,6 +889,7 @@ app.post('/api/rooms', (req, res) => {
     turn: 0,
     starterSlot: 0,
     roundWinnerSlot: null,
+    roundWinnerTeam: null,
     roundBlocked: false,
     roundPointsEarned: 0,
     logs: [`Room ${code} created. Target: ${limitScore} PTS | Turn Timer: ${limitTurnTimer > 0 ? `${limitTurnTimer}s` : 'OFF'}. Waiting for players to join.`],
@@ -1658,6 +1663,7 @@ app.post('/api/rooms/:code/reset', (req, res) => {
   room.board = [];
   room.firstTileIndex = 0;
   room.roundWinnerSlot = null;
+  room.roundWinnerTeam = null;
   room.roundBlocked = false;
   room.roundPointsEarned = 0;
   room.lastDominoWinnerSlot = null;

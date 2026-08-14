@@ -8,6 +8,7 @@ import { BoardThemeId, FichaThemeId, BOARD_THEMES } from '../utils/themes';
 interface DominoBoardProps {
   board: Domino[];
   firstTileIndex: number;
+  roundIndex?: number;
   onPlaySelect?: (side: 'left' | 'right') => void;
   pendingPlaySideSelection?: boolean; // True if the user clicked a playable card and we need to ask left or right
   boardTheme?: BoardThemeId;
@@ -17,6 +18,7 @@ interface DominoBoardProps {
 export const DominoBoard: React.FC<DominoBoardProps> = ({
   board,
   firstTileIndex,
+  roundIndex,
   onPlaySelect,
   pendingPlaySideSelection = false,
   boardTheme = 'havana',
@@ -46,11 +48,14 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  // Recenter and reset zoom whenever the board length changes
+  // Reset zoom and pan only when a new round begins (e.g. empty board or round change), NOT on every turn
+  const isRoundStart = board.length === 0;
   useEffect(() => {
-    setPanOffset({ x: 0, y: 0 });
-    setZoomScale(1.0);
-  }, [board.length]);
+    if (isRoundStart) {
+      setPanOffset({ x: 0, y: 0 });
+      setZoomScale(1.0);
+    }
+  }, [isRoundStart, roundIndex]);
 
   // Handle Wheel Zoom non-passively
   useEffect(() => {

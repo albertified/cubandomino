@@ -65,6 +65,7 @@ export interface GameRoom {
     revealed?: boolean;
   };
   roundWinnerSlot: number | null; // Player slot who won the round (-1 if blocked/trancado)
+  roundWinnerTeam?: number | null; // 0 for Team A, 1 for Team B, null if tie/pending
   roundBlocked: boolean;
   roundPointsEarned: number;
   scoreMultiplier?: number; // Multiplier for points (e.g. 2x after a tie in trancado)
