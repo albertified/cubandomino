@@ -167,10 +167,72 @@ function hasValidMoves(hand: Domino[], board: Domino[]): boolean {
   return hand.some(([v1, v2]) => v1 === leftVal || v2 === leftVal || v1 === rightVal || v2 === rightVal);
 }
 
+// Record pass events to track missing suits per player (Information Theory / El Pase)
+function recordPlayerPass(room: GameRoom, slot: number) {
+  if (!room.roundMissingSuits) {
+    room.roundMissingSuits = [[], [], [], []];
+  }
+  while (room.roundMissingSuits.length < 4) {
+    room.roundMissingSuits.push([]);
+  }
+  if (room.board.length > 0 && slot >= 0 && slot < 4) {
+    const leftVal = room.board[0][0];
+    const rightVal = room.board[room.board.length - 1][1];
+    if (!room.roundMissingSuits[slot].includes(leftVal)) {
+      room.roundMissingSuits[slot].push(leftVal);
+    }
+    if (!room.roundMissingSuits[slot].includes(rightVal)) {
+      room.roundMissingSuits[slot].push(rightVal);
+    }
+  }
+}
+
+// Count how many times each suit (0..9) appears in a collection of dominoes
+function getSuitFrequencies(tiles: Domino[]): number[] {
+  const counts = new Array(10).fill(0);
+  for (const [v1, v2] of tiles) {
+    counts[v1]++;
+    if (v1 !== v2) counts[v2]++;
+  }
+  return counts;
+}
+
+// Full suit tracking ledger across board, hand, and unplayed tiles (55 tiles total in Doble Nueve, 10 per suit)
+function getCubanSuitLedger(hand: Domino[], board: Domino[]) {
+  const boardCounts = getSuitFrequencies(board);
+  const handCounts = getSuitFrequencies(hand);
+  
+  // Total tiles per suit in double-nine (0..9) is 10
+  const unaccountedCounts = new Array(10).fill(0);
+  for (let s = 0; s <= 9; s++) {
+    unaccountedCounts[s] = Math.max(0, 10 - boardCounts[s] - handCounts[s]);
+  }
+
+  return {
+    boardCounts,
+    handCounts,
+    unaccountedCounts
+  };
+}
+
+// Count valid legal moves for a given hand and board state
+function countValidMoves(hand: Domino[], board: Domino[]): number {
+  if (board.length === 0) return hand.length;
+  const leftVal = board[0][0];
+  const rightVal = board[board.length - 1][1];
+  let count = 0;
+  for (const tile of hand) {
+    const { left, right } = canPlayTile(tile, leftVal, rightVal);
+    if (left) count++;
+    if (right) count++;
+  }
+  return count;
+}
+
 // Select the best bot move based on difficulty (Novice, Intermediate, Pro)
 type BotDifficulty = 'novice' | 'intermediate' | 'pro';
 
-// Find the best double in a hand according to Cuban Doble Nueve opening strategy
+// Find the best double in a hand according to Cuban Doble Nueve opening strategy (La Salida)
 function getBotOpeningDoubleMove(
   hand: Domino[],
   difficulty: BotDifficulty = 'intermediate',
@@ -205,20 +267,20 @@ function getBotOpeningDoubleMove(
       return { tileIndex: bestIdx, side: 'right', isDouble: true };
     }
 
-    // PRO: Cuban Master opening strategy for doubles
-    // Count suit frequencies in hand (0..9)
-    const suitCounts = new Array(10).fill(0);
-    hand.forEach(([v1, v2]) => {
-      suitCounts[v1]++;
-      if (v1 !== v2) suitCounts[v2]++;
-    });
+    // PRO MASTER: Cuban Elite Opening Strategy for Doubles (La Salida)
+    // Suit frequency in hand (0..9)
+    const suitCounts = getSuitFrequencies(hand);
 
     let bestIdx = doubleIndices[0];
     let bestScore = -1000;
     for (const idx of doubleIndices) {
       const v = hand[idx][0];
-      // Total value points + heavy bonus for holding companion tiles of that suit (suit control / "suya")
-      const score = (v * 2) * 5 + (suitCounts[v] * 35);
+      const companionCount = suitCounts[v] - 1; // Companions besides the double
+      // Double pip value + heavy reward for companion suit control (la suya) + high suit offensive weight
+      let score = (v * 2) * 5 + (suitCounts[v] * 40);
+      if (v >= 7) score += 50; // 9-9, 8-8, 7-7 attack power
+      if (companionCount >= 3) score += 100; // Dominant suit monopoly signal to partner
+
       if (score > bestScore) {
         bestScore = score;
         bestIdx = idx;
@@ -227,9 +289,202 @@ function getBotOpeningDoubleMove(
     return { tileIndex: bestIdx, side: 'right', isDouble: true };
   }
 
-  // Fallback if bot has no doubles in hand: play strongest heavy tile
+  // Fallback if bot has no doubles in hand: play strongest mixed tile
   const move = getBotMove(hand, [], difficulty, playerSlot, room);
   return move ? { tileIndex: move.tileIndex, side: 'right', isDouble: false } : null;
+}
+
+interface ValidMove {
+  tileIndex: number;
+  side: 'left' | 'right';
+  tile: Domino;
+  score: number;
+}
+
+// Pro Master Midgame / Endgame Strategy incorporating all 5 Cuban Elite Principles
+function getProMasterMove(
+  hand: Domino[],
+  board: Domino[],
+  validMoves: ValidMove[],
+  playerSlot?: number,
+  room?: GameRoom
+): ValidMove {
+  const slot = playerSlot !== undefined ? playerSlot : 0;
+  const partnerSlot = (slot + 2) % 4;
+  const nextOppSlot = (slot + 3) % 4; // Counter-clockwise turn order (0 -> 3 -> 2 -> 1)
+  const prevOppSlot = (slot + 1) % 4;
+
+  const { handCounts, unaccountedCounts } = getCubanSuitLedger(hand, board);
+  const missingSuits = room?.roundMissingSuits || [[], [], [], []];
+  const nextOppMissing = new Set(missingSuits[nextOppSlot] || []);
+  const prevOppMissing = new Set(missingSuits[prevOppSlot] || []);
+  const partnerMissing = new Set(missingSuits[partnerSlot] || []);
+
+  const leftVal = board[0][0];
+  const rightVal = board[board.length - 1][1];
+
+  // 1. Identify Starter & Lead Signal (La Salida)
+  let partnerLeadSuit: number | null = null;
+  let opponentLeadSuit: number | null = null;
+
+  if (room && room.board.length > 0) {
+    const starterTile = (room.firstTileIndex !== undefined && room.board[room.firstTileIndex])
+      ? room.board[room.firstTileIndex]
+      : room.board[0];
+    
+    if (starterTile) {
+      const isLeadDouble = starterTile[0] === starterTile[1];
+      const primaryLeadSuit = isLeadDouble ? starterTile[0] : Math.max(starterTile[0], starterTile[1]);
+
+      if (room.starterSlot === partnerSlot) {
+        partnerLeadSuit = primaryLeadSuit;
+      } else if (room.starterSlot === nextOppSlot || room.starterSlot === prevOppSlot) {
+        opponentLeadSuit = primaryLeadSuit;
+      }
+    }
+  }
+
+  // Evaluate every candidate legal move
+  for (const move of validMoves) {
+    const [v1, v2] = move.tile;
+    const isDouble = v1 === v2;
+    const pipTotal = v1 + v2;
+
+    const playedVal = move.side === 'left' ? leftVal : rightVal;
+    const exposedVal = (v1 === playedVal) ? v2 : v1;
+    const otherEndVal = move.side === 'left' ? rightVal : leftVal;
+    const isSquare = (exposedVal === otherEndVal); // La Cuadra
+
+    let score = 0;
+
+    // -------------------------------------------------------------
+    // PRINCIPLE 1: Respecting Partner's Lead (Respetar la Salida)
+    // -------------------------------------------------------------
+    if (partnerLeadSuit !== null) {
+      // If partner opened with suit S, does this move "eat" the lead?
+      if (playedVal === partnerLeadSuit) {
+        // "Eating the lead" (Comerse la salida): Covering partner's active suit
+        // Check if bot had an alternate move on the other end that protects the lead
+        const hasAlternateMove = validMoves.some(m => {
+          const mPlayed = m.side === 'left' ? leftVal : rightVal;
+          return mPlayed !== partnerLeadSuit;
+        });
+
+        if (hasAlternateMove && hand.length > 1) {
+          // Cardinal blunder in Cuban dominoes unless forced or winning domino!
+          score -= 850;
+        }
+      } else {
+        // We played on the other end, preserving partner's lead!
+        if (otherEndVal === partnerLeadSuit) {
+          score += 240;
+        }
+      }
+
+      // If we expose partner's lead suit on the board, reward it heavily!
+      if (exposedVal === partnerLeadSuit) {
+        score += 200;
+      }
+    }
+
+    // If opponent started with lead suit, reward choking/covering their lead
+    if (opponentLeadSuit !== null && playedVal === opponentLeadSuit) {
+      score += 150; // Tapar la salida del contrario
+    }
+
+    // -------------------------------------------------------------
+    // PRINCIPLE 2: Forcing Passes & Pressuring Opponents (Apretar)
+    // -------------------------------------------------------------
+    // Next opponent is immediately after us:
+    if (nextOppMissing.has(exposedVal)) {
+      score += 360; // Next opponent is known to pass on exposedVal!
+    }
+    if (nextOppMissing.has(exposedVal) && nextOppMissing.has(otherEndVal)) {
+      score += 550; // Guaranteed full pass on next opponent!
+    }
+    if (prevOppMissing.has(exposedVal)) {
+      score += 120;
+    }
+
+    // Protect partner: Do NOT choke partner on both ends if partner is missing suits
+    if (partnerMissing.has(exposedVal) && partnerMissing.has(otherEndVal)) {
+      score -= 500; // Leaving two dead ends for partner!
+    } else if (partnerMissing.has(exposedVal)) {
+      score -= 90;
+    }
+
+    // -------------------------------------------------------------
+    // PRINCIPLE 3: Suit Control & Frequency Dominance (La Suya)
+    // -------------------------------------------------------------
+    const companionsInHand = handCounts[exposedVal] - (v1 === exposedVal || v2 === exposedVal ? 1 : 0);
+    const unaccountedInSuit = unaccountedCounts[exposedVal];
+
+    // Holding 2+ companion tiles gives great offensive tempo
+    if (companionsInHand >= 2) {
+      score += companionsInHand * 45;
+    } else if (companionsInHand === 1 && unaccountedInSuit <= 2) {
+      score += 35;
+    }
+
+    // -------------------------------------------------------------
+    // PRINCIPLE 4: The Double-Block / Squaring the Board (La Cuadra)
+    // -------------------------------------------------------------
+    if (isSquare) {
+      // Both ends become exposedVal!
+      // In Cuban signaling, this declares monopoly/control of exposedVal
+      if (companionsInHand >= 2 || (companionsInHand >= 1 && unaccountedInSuit <= 1)) {
+        score += 420; // Massive offensive declaration with suit dominance!
+      } else if (nextOppMissing.has(exposedVal) && prevOppMissing.has(exposedVal)) {
+        score += 550; // Both opponents are locked out of this suit!
+      } else if (companionsInHand === 0 && !nextOppMissing.has(exposedVal)) {
+        score -= 350; // Blind square giving opponents complete board control!
+      }
+    }
+
+    // -------------------------------------------------------------
+    // PRINCIPLE 5: Closing the Game / Trancado Calculation (La Traba)
+    // -------------------------------------------------------------
+    const exposedIsDead = (unaccountedInSuit === 0 && companionsInHand === 0);
+    const otherIsDead = (unaccountedCounts[otherEndVal] === 0 && (handCounts[otherEndVal] - (v1 === otherEndVal || v2 === otherEndVal ? 1 : 0) === 0));
+
+    if (exposedIsDead && otherIsDead) {
+      // This play will immediately TRANCAR (lock) the game!
+      // Calculate bot's remaining pip sum after this play
+      let myRemainingPips = 0;
+      hand.forEach((tile, idx) => {
+        if (idx !== move.tileIndex) myRemainingPips += (tile[0] + tile[1]);
+      });
+
+      // Under Cuban rules: team with lowest single player hand wins
+      if (myRemainingPips <= 6 || hand.length <= 2) {
+        score += 750; // Confident winning trancado!
+      } else if (myRemainingPips >= 18) {
+        score -= 900; // High pips: strictly reject blocking the game!
+      } else {
+        score -= 200; // Moderate risk
+      }
+    }
+
+    // -------------------------------------------------------------
+    // PRINCIPLE 6: Playing Out of Suit & Dumping Heavy Points (Salir del Ahogo)
+    // -------------------------------------------------------------
+    if (isDouble) {
+      // High doubles (9-9, 8-8, 7-7) are point liabilities if blocked
+      score += 130 + (v1 * 14);
+    } else {
+      score += pipTotal * 4;
+    }
+
+    // End-of-hand domino sprint: when bot has 1 or 2 tiles left
+    if (hand.length <= 2) {
+      score += 150;
+    }
+
+    move.score = score;
+  }
+
+  validMoves.sort((a, b) => b.score - a.score);
+  return validMoves[0];
 }
 
 function getBotMove(
@@ -241,7 +496,7 @@ function getBotMove(
 ): { tileIndex: number; side: 'left' | 'right' } | null {
   if (hand.length === 0) return null;
 
-  // 1. OPENING MOVE (Empty Board) - prioritize doubles
+  // 1. OPENING MOVE (Empty Board) - prioritize doubles & suit strength
   if (board.length === 0) {
     const openingDoubleMove = getBotOpeningDoubleMove(hand, difficulty, playerSlot, room);
     if (openingDoubleMove) {
@@ -268,14 +523,9 @@ function getBotMove(
       return { tileIndex: bestIndex, side: 'right' };
     }
 
-    // PRO: Cuban Master Opening Strategy
-    // Count suit frequencies in hand (0..9)
-    const suitCounts = new Array(10).fill(0);
-    hand.forEach(([v1, v2]) => {
-      suitCounts[v1]++;
-      if (v1 !== v2) suitCounts[v2]++;
-    });
-
+    // PRO: Cuban Master Opening Strategy for Mixed Tile (Ficha Mixta)
+    // "Leading a mixed tile often signals strength in the higher number or a flexible hand."
+    const suitCounts = getSuitFrequencies(hand);
     let bestIndex = 0;
     let bestScore = -1000;
 
@@ -283,15 +533,14 @@ function getBotMove(
       const [v1, v2] = hand[i];
       const isDouble = v1 === v2;
       const totalPoints = v1 + v2;
+      const maxVal = Math.max(v1, v2);
+      const minVal = Math.min(v1, v2);
 
-      let score = totalPoints + (isDouble ? 250 : 0);
+      let score = totalPoints * 4 + (isDouble ? 250 : 0);
 
-      // Suit Control: holding 4+ of a suit gives massive advantage
-      if (isDouble) {
-        score += suitCounts[v1] * 35;
-      } else {
-        score += (suitCounts[v1] + suitCounts[v2]) * 12;
-      }
+      // Cuban convention: strong suit weighting on higher number
+      score += suitCounts[maxVal] * 35;
+      score += suitCounts[minVal] * 15;
 
       if (score > bestScore) {
         bestScore = score;
@@ -304,13 +553,6 @@ function getBotMove(
   // 2. MID-GAME / END-GAME MOVES (Board has tiles)
   const leftVal = board[0][0];
   const rightVal = board[board.length - 1][1];
-
-  interface ValidMove {
-    tileIndex: number;
-    side: 'left' | 'right';
-    tile: Domino;
-    score: number;
-  }
 
   const validMoves: ValidMove[] = [];
 
@@ -350,68 +592,8 @@ function getBotMove(
   }
 
   // --- PRO MASTER ALGORITHM (Cuban Doble Nueve Advanced Strategy) ---
-  const handSuitCounts = new Array(10).fill(0);
-  hand.forEach(([v1, v2]) => {
-    handSuitCounts[v1]++;
-    if (v1 !== v2) handSuitCounts[v2]++;
-  });
-
-  const partnerSlot = playerSlot !== undefined ? (playerSlot + 2) % 4 : null;
-  const oppSlot1 = playerSlot !== undefined ? (playerSlot + 1) % 4 : null;
-  const oppSlot2 = playerSlot !== undefined ? (playerSlot + 3) % 4 : null;
-
-  for (const move of validMoves) {
-    const [v1, v2] = move.tile;
-    const isDouble = v1 === v2;
-    const totalValue = v1 + v2;
-
-    let exposedVal: number;
-    if (move.side === 'left') {
-      exposedVal = (v1 === leftVal) ? v2 : v1;
-    } else {
-      exposedVal = (v1 === rightVal) ? v2 : v1;
-    }
-
-    let score = 0;
-
-    // A. Heavy Double Dump: High doubles (9-9, 8-8, 7-7) get huge priority to prevent getting blocked
-    if (isDouble) {
-      score += 150 + (v1 * 15);
-    } else {
-      score += totalValue * 4;
-    }
-
-    // B. Suit Control (Suya Strategy): Holding extra tiles of the exposed suit
-    const remainingInHand = handSuitCounts[exposedVal] - (v1 === exposedVal || v2 === exposedVal ? 1 : 0);
-    score += remainingInHand * 35;
-
-    // C. Tactical Pressuring
-    if (room && room.logs) {
-      const logsText = room.logs.slice(-15).join('\n');
-      if (oppSlot1 !== null && room.players[oppSlot1]) {
-        const opp1Name = room.players[oppSlot1]?.name;
-        if (opp1Name && logsText.includes(`${opp1Name} has no valid moves`)) {
-          score += 25;
-        }
-      }
-      if (oppSlot2 !== null && room.players[oppSlot2]) {
-        const opp2Name = room.players[oppSlot2]?.name;
-        if (opp2Name && logsText.includes(`${opp2Name} has no valid moves`)) {
-          score += 25;
-        }
-      }
-    }
-
-    // D. End of hand urgency
-    if (hand.length <= 2) {
-      score += 100;
-    }
-
-    move.score = score;
-  }
-
-  validMoves.sort((a, b) => b.score - a.score);
-  return { tileIndex: validMoves[0].tileIndex, side: validMoves[0].side };
+  const bestMove = getProMasterMove(hand, board, validMoves, playerSlot, room);
+  return { tileIndex: bestMove.tileIndex, side: bestMove.side };
 }
 
 // Deal a new round
@@ -424,6 +606,7 @@ function dealRound(room: GameRoom) {
   room.roundBlocked = false;
   room.roundPointsEarned = 0;
   room.consecutivePasses = 0;
+  room.roundMissingSuits = [[], [], [], []];
 
   // Deal 10 tiles to each of the 4 slots
   for (let i = 0; i < 4; i++) {
@@ -746,8 +929,13 @@ function scheduleBotTurnIfNeeded(room: GameRoom) {
   }
 
   if (activePlayer.type === 'bot') {
-    // Random delay between 2000ms and 5000ms (2 to 5 seconds)
-    const delay = cryptoRandomInt(3000) + 2000;
+    // 2. Timing and Hesitation (La Pensada / El Tiempo)
+    // The Instant Play (A Quemarropa): If the bot has only 1 legal option, play quickly (700-1200ms)
+    // The Deliberate Pause (Pensarla): If 2 or more legal options, pause deliberately (2500-4200ms)
+    const validMovesCount = countValidMoves(activePlayer.hand, room.board);
+    const delay = validMovesCount <= 1 
+      ? (cryptoRandomInt(500) + 700)   // Fast play "a quemarropa" signaling single option
+      : (cryptoRandomInt(1700) + 2500); // Deliberate pause "la pensada" signaling flexibility
 
     const timer = setTimeout(() => {
       botTimers.delete(room.roomCode.toUpperCase());
@@ -768,6 +956,7 @@ function scheduleBotTurnIfNeeded(room: GameRoom) {
         executePlayTile(currentRoom, currentRoom.turn, botMove.tileIndex, botMove.side);
       } else {
         currentRoom.consecutivePasses = (currentRoom.consecutivePasses || 0) + 1;
+        recordPlayerPass(currentRoom, currentRoom.turn);
         currentRoom.logs.push(`⚠️ ${botPlayer.name} has no valid moves and passes.`);
         
         if (currentRoom.consecutivePasses >= 4) {
@@ -2075,6 +2264,7 @@ app.post('/api/rooms/:code/pass', (req, res) => {
   }
 
   room.consecutivePasses = (room.consecutivePasses || 0) + 1;
+  recordPlayerPass(room, room.turn);
   room.logs.push(`⚠️ ${activePlayer.name} has no valid moves and passes.`);
 
   if (room.consecutivePasses >= 4) {
@@ -2299,6 +2489,7 @@ setInterval(() => {
         executePlayTile(room, activeSlot, botMove.tileIndex, botMove.side);
       } else {
         room.consecutivePasses = (room.consecutivePasses || 0) + 1;
+        recordPlayerPass(room, activeSlot);
         room.logs.push(`${reasonPrefix}: Auto-passed turn.`);
 
         if (room.consecutivePasses >= 4) {

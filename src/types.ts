@@ -73,6 +73,7 @@ export interface GameRoom {
   scoreMultiplier?: number; // Multiplier for points (e.g. 2x after a tie in trancado)
   lastDominoWinnerSlot?: number | null; // Slot of player who dominoed last (null if trancado or reset)
   consecutivePasses?: number;
+  roundMissingSuits?: number[][]; // Missing suits per player slot [0..3] recorded from passes in this round
   logs: string[];
   reactions?: Reaction[];
   spectators?: Spectator[];
