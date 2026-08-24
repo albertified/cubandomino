@@ -657,6 +657,7 @@ export default function App() {
   const [turnTimer, setTurnTimer] = useState<number>(60);
   const [createBotDifficulty, setCreateBotDifficulty] = useState<BotDifficulty>('intermediate');
   const [joiningCode, setJoiningCode] = useState<string>('');
+  const [joiningTeam, setJoiningTeam] = useState<0 | 1 | 'auto'>('auto');
   const [playerSlot, setPlayerSlot] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -680,6 +681,15 @@ export default function App() {
     return (localStorage.getItem('cuban_dominoes_track') as 'jazz' | 'fairy' | 'havana') || 'jazz';
   });
   const [reactionCooldown, setReactionCooldown] = useState<number>(0);
+  const [botStartingLoading, setBotStartingLoading] = useState<boolean>(false);
+  const [activeSavedSession, setActiveSavedSession] = useState<{
+    roomCode: string;
+    targetScore: number;
+    status: GameStatus;
+    playerSlot: number | null;
+    scores: [number, number];
+    hostName?: string;
+  } | null>(null);
 
   // Board & Ficha Custom Themes
   const [sidebarTab, setSidebarTab] = useState<'logs' | 'graph'>('logs');
@@ -1085,8 +1095,11 @@ export default function App() {
     try {
       const res = await fetch('/api/public-rooms');
       if (res.ok) {
-        const data = await res.json();
-        setPublicRooms(data.rooms || []);
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          setPublicRooms(data.rooms || []);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch public rooms:', err);
@@ -1150,6 +1163,8 @@ export default function App() {
           setRoomCode('');
           setPlayerSlot(null);
           setInvitedRoomCode(null);
+          localStorage.removeItem('cuban_dominoes_active_session');
+          setActiveSavedSession(null);
           clearUrlParams();
         }
         return;
@@ -1201,13 +1216,23 @@ export default function App() {
 
       if (myIndex !== -1) {
         setPlayerSlot(myIndex);
+        localStorage.setItem('cuban_dominoes_active_session', JSON.stringify({
+          roomCode: updatedRoom.roomCode,
+          timestamp: Date.now()
+        }));
       } else if (isSpectating) {
         setPlayerSlot(null);
+        localStorage.setItem('cuban_dominoes_active_session', JSON.stringify({
+          roomCode: updatedRoom.roomCode,
+          timestamp: Date.now()
+        }));
       } else {
         // Player was removed/kicked from the room by the host
         setRoom(null);
         setRoomCode('');
         setPlayerSlot(null);
+        localStorage.removeItem('cuban_dominoes_active_session');
+        setActiveSavedSession(null);
         setError(t.kickedNotice);
       }
     } catch (err) {
@@ -1232,12 +1257,83 @@ export default function App() {
     };
   }, [roomCode]);
 
+  // Check for active match to enable instant seamless reconnection if abruptly disconnected
+  useEffect(() => {
+    if (roomCode) return;
+    const checkSavedSession = async () => {
+      const savedRaw = localStorage.getItem('cuban_dominoes_active_session');
+      if (!savedRaw) {
+        setActiveSavedSession(null);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(savedRaw);
+        if (!parsed.roomCode) return;
+        const currentPid = playerId || localStorage.getItem('cuban_dominoes_player_id') || '';
+        const res = await fetch(`/api/rooms/${parsed.roomCode}?playerId=${encodeURIComponent(currentPid)}`);
+        if (!res.ok) {
+          if (res.status === 404) {
+            localStorage.removeItem('cuban_dominoes_active_session');
+            setActiveSavedSession(null);
+          }
+          return;
+        }
+        const data = await res.json();
+        const r: GameRoom = data.room;
+        if (r.status === 'game_over') {
+          localStorage.removeItem('cuban_dominoes_active_session');
+          setActiveSavedSession(null);
+          return;
+        }
+        const myIdx = r.players.findIndex(p => p && p.id === currentPid);
+        const isSpec = (r.spectators || []).some(s => s.id === currentPid);
+        if (myIdx !== -1 || isSpec) {
+          setActiveSavedSession({
+            roomCode: r.roomCode,
+            targetScore: r.targetScore,
+            status: r.status,
+            playerSlot: myIdx !== -1 ? myIdx : null,
+            scores: r.scores,
+            hostName: r.hostName
+          });
+        } else {
+          setActiveSavedSession(null);
+        }
+      } catch (e) {
+        // network silent
+      }
+    };
+    checkSavedSession();
+    const interval = setInterval(checkSavedSession, 4000);
+    return () => clearInterval(interval);
+  }, [roomCode, playerId]);
+
   // Auto-scroll logs to bottom
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [room?.logs]);
+
+  // Keyboard arrow shortcuts for intuitive seat shifting in lobby
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (room?.status !== 'waiting' || playerSlot === null || loading) return;
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        shiftSeat('left');
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        shiftSeat('right');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [room?.status, playerSlot, loading, roomCode, playerId]);
 
   // Turn sound alert trigger
   const prevTurnStateRef = useRef<{ turn: number | null; status: GameStatus | null }>({ turn: null, status: null });
@@ -1265,6 +1361,55 @@ export default function App() {
   }, [room?.turn, room?.status, playerSlot, playerId]);
 
   // Actions
+  const reconnectToRoom = async (code: string, slot?: number | null) => {
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanCode) return;
+    setLoading(true);
+    setError(null);
+    try {
+      let activeId = playerId;
+      if (!activeId) {
+        activeId = localStorage.getItem('cuban_dominoes_player_id') || cryptoRandomId('p');
+        setPlayerId(activeId);
+        localStorage.setItem('cuban_dominoes_player_id', activeId);
+      }
+
+      const response = await fetch(`/api/rooms/${cleanCode}/reconnect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerName,
+          playerId: activeId,
+          slot: slot !== undefined && slot !== null ? slot : undefined
+        })
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to reconnect to room.');
+      }
+      const data = await response.json();
+      setRoom(data.room);
+      setRoomCode(data.room.roomCode);
+      setPlayerSlot(data.playerSlot);
+      localStorage.setItem('cuban_dominoes_active_session', JSON.stringify({
+        roomCode: data.room.roomCode,
+        timestamp: Date.now()
+      }));
+      setActiveSavedSession(null);
+      setInvitedRoomCode(null);
+      clearUrlParams();
+      audio.playClack();
+    } catch (err: any) {
+      setError(err.message || 'Error reconnecting to match');
+      if (err.message && (err.message.includes('not found') || err.message.includes('concluded') || err.message.includes('closed'))) {
+        localStorage.removeItem('cuban_dominoes_active_session');
+        setActiveSavedSession(null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const createRoom = async () => {
     setLoading(true);
     setError(null);
@@ -1286,6 +1431,11 @@ export default function App() {
       setRoom(data.room);
       setRoomCode(data.room.roomCode);
       setPlayerSlot(data.playerSlot);
+      localStorage.setItem('cuban_dominoes_active_session', JSON.stringify({
+        roomCode: data.room.roomCode,
+        timestamp: Date.now()
+      }));
+      setActiveSavedSession(null);
       setInvitedRoomCode(null);
       clearUrlParams();
     } catch (err: any) {
@@ -1295,23 +1445,28 @@ export default function App() {
     }
   };
 
-  const joinRoom = async (code: string) => {
+  const joinRoom = async (code: string, teamChoice?: 0 | 1 | 'auto') => {
     const cleanCode = code.trim().toUpperCase();
     if (!cleanCode) return;
     setLoading(true);
     setError(null);
     try {
-      // Generate new ID using crypto random on join
-      const newPlayerId = cryptoRandomId('p');
-      setPlayerId(newPlayerId);
-      localStorage.setItem('cuban_dominoes_player_id', newPlayerId);
+      let activeId = playerId;
+      if (!activeId) {
+        activeId = localStorage.getItem('cuban_dominoes_player_id') || cryptoRandomId('p');
+        setPlayerId(activeId);
+        localStorage.setItem('cuban_dominoes_player_id', activeId);
+      }
+
+      const effectiveTeam = teamChoice !== undefined ? (teamChoice === 'auto' ? undefined : teamChoice) : (joiningTeam === 'auto' ? undefined : joiningTeam);
 
       const response = await fetch(`/api/rooms/${cleanCode}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           playerName,
-          playerId: newPlayerId,
+          playerId: activeId,
+          preferredTeam: effectiveTeam
         }),
       });
       if (!response.ok) {
@@ -1327,8 +1482,14 @@ export default function App() {
       setRoom(data.room);
       setRoomCode(data.room.roomCode);
       setPlayerSlot(data.playerSlot);
+      localStorage.setItem('cuban_dominoes_active_session', JSON.stringify({
+        roomCode: data.room.roomCode,
+        timestamp: Date.now()
+      }));
+      setActiveSavedSession(null);
       setInvitedRoomCode(null);
       clearUrlParams();
+      audio.playClack();
     } catch (err: any) {
       setError(err.message || 'Error joining room');
     } finally {
@@ -1365,6 +1526,11 @@ export default function App() {
       setRoom(data.room);
       setRoomCode(data.room.roomCode);
       setPlayerSlot(null);
+      localStorage.setItem('cuban_dominoes_active_session', JSON.stringify({
+        roomCode: data.room.roomCode,
+        timestamp: Date.now()
+      }));
+      setActiveSavedSession(null);
       setInvitedRoomCode(null);
       clearUrlParams();
     } catch (err: any) {
@@ -1374,7 +1540,7 @@ export default function App() {
     }
   };
 
-  const takeOpenSeat = async (slotIdx?: number) => {
+  const takeOpenSeat = async (slotIdx?: number, preferredTeam?: 0 | 1) => {
     if (!roomCode) return;
     setLoading(true);
     setError(null);
@@ -1385,7 +1551,8 @@ export default function App() {
         body: JSON.stringify({
           playerName,
           playerId,
-          slot: slotIdx
+          slot: slotIdx,
+          preferredTeam
         }),
       });
       if (!response.ok) {
@@ -1395,8 +1562,88 @@ export default function App() {
       const data = await response.json();
       setRoom(data.room);
       setPlayerSlot(data.playerSlot);
+      localStorage.setItem('cuban_dominoes_active_session', JSON.stringify({
+        roomCode: data.room.roomCode,
+        timestamp: Date.now()
+      }));
+      audio.playClack();
     } catch (err: any) {
       setError(err.message || 'Error taking seat');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const switchSlot = async (destSlot: number) => {
+    if (!roomCode || !playerId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/rooms/${roomCode}/switch-slot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, targetSlot: destSlot }),
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to switch seat.');
+      }
+      const data = await response.json();
+      setRoom(data.room);
+      setPlayerSlot(data.playerSlot);
+      audio.playClack();
+    } catch (err: any) {
+      setError(err.message || 'Error switching seat');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const shiftSeat = async (direction: 'left' | 'right') => {
+    if (!roomCode || !playerId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/rooms/${roomCode}/shift-seat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, direction }),
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || `Failed to move seat ${direction}.`);
+      }
+      const data = await response.json();
+      setRoom(data.room);
+      setPlayerSlot(data.playerSlot);
+      audio.playClack();
+    } catch (err: any) {
+      setError(err.message || `Error moving seat ${direction}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const switchTeam = async (targetTeam?: 0 | 1) => {
+    if (!roomCode || !playerId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/rooms/${roomCode}/switch-team`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, targetTeam }),
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to switch team.');
+      }
+      const data = await response.json();
+      setRoom(data.room);
+      setPlayerSlot(data.playerSlot);
+      audio.playClack();
+    } catch (err: any) {
+      setError(err.message || 'Error switching team');
     } finally {
       setLoading(false);
     }
@@ -1418,13 +1665,17 @@ export default function App() {
     setPlayerSlot(null);
   };
 
-  const addBot = async (difficulty?: BotDifficulty) => {
+  const addBot = async (difficulty?: BotDifficulty, slotIdx?: number) => {
     if (!roomCode) return;
     try {
       const response = await fetch(`/api/rooms/${roomCode}/bot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requesterId: playerId, difficulty: difficulty || room?.defaultBotDifficulty || 'intermediate' }),
+        body: JSON.stringify({ 
+          requesterId: playerId, 
+          difficulty: difficulty || room?.defaultBotDifficulty || 'intermediate',
+          slot: slotIdx
+        }),
       });
       if (!response.ok) {
         const errData = await response.json();
@@ -1432,6 +1683,7 @@ export default function App() {
       }
       const data = await response.json();
       setRoom(data.room);
+      audio.playClack();
     } catch (err: any) {
       setError(err.message);
     }
@@ -1650,6 +1902,32 @@ export default function App() {
     }
   };
 
+  const letBotPartnerStartWithDouble = async () => {
+    if (!roomCode || playerSlot === null || !room) return;
+    setBotStartingLoading(true);
+    try {
+      const response = await fetch(`/api/rooms/${roomCode}/bot-partner-start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to trigger bot partner opening.');
+      }
+      const data = await response.json();
+      setRoom(data.room);
+      setSelectedTileIndex(null);
+      setPendingPlaySides(null);
+      setSelectedLocalIdx(null);
+      audio.playClack();
+    } catch (err: any) {
+      setError(err.message || 'Failed to let bot partner start');
+    } finally {
+      setBotStartingLoading(false);
+    }
+  };
+
   const passTurn = async () => {
     if (!roomCode || !playerId) return;
     try {
@@ -1766,6 +2044,8 @@ export default function App() {
     setSelectedLocalIdx(null);
     setInvitedRoomCode(null);
     setJoiningCode('');
+    localStorage.removeItem('cuban_dominoes_active_session');
+    setActiveSavedSession(null);
     clearUrlParams();
   };
 
@@ -1803,11 +2083,37 @@ export default function App() {
     return room.players[room.turn]?.name || `Player ${room.turn + 1}`;
   }, [room]);
 
+  const partnerSlot = useMemo(() => {
+    if (playerSlot === null) return null;
+    return (playerSlot + 2) % 4;
+  }, [playerSlot]);
+
+  const botPartner = useMemo(() => {
+    if (!room || partnerSlot === null) return null;
+    const p = room.players[partnerSlot];
+    return p && p.type === 'bot' ? p : null;
+  }, [room, partnerSlot]);
+
+  const canAskBotPartnerToStart = useMemo(() => {
+    return Boolean(
+      room &&
+      room.status === 'playing' &&
+      room.board.length === 0 &&
+      playerSlot !== null &&
+      (playerSlot % 2 === room.startingTeam) &&
+      botPartner
+    );
+  }, [room, playerSlot, botPartner]);
+
   const myHand = useMemo(() => {
     if (!room || playerSlot === null) return [];
     const me = room.players[playerSlot];
     return me ? me.hand : [];
   }, [room, playerSlot]);
+
+  const myHandHasDoubles = useMemo(() => {
+    return myHand.some(([v1, v2]) => v1 === v2);
+  }, [myHand]);
 
   // Checks which tiles in my hand can be played
   const playableIndexes = useMemo(() => {
@@ -2110,6 +2416,62 @@ export default function App() {
           {/* LOBBY SELECTOR VIEW */}
           {hasName && !roomCode && (
             <div className="w-full flex flex-col gap-6">
+              {/* RECONNECT TO ACTIVE MATCH BANNER */}
+              <AnimatePresence>
+                {activeSavedSession && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="w-full bg-[#006876]/15 border-2 border-[#006876] rounded-sm p-4 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 backdrop-blur-md"
+                  >
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                      <div className="w-10 h-10 rounded-full bg-[#006876] text-[#8debfd] flex items-center justify-center font-bold text-xl shrink-0 shadow-md border border-[#8debfd]/40">
+                        ⚡
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-display font-black text-sm uppercase text-[#1d1c13] tracking-wide">
+                            {t.reconnectNotice}
+                          </span>
+                          <span className="px-2 py-0.5 bg-[#fe7328] text-[#3b1200] font-mono text-[10px] font-black rounded-xs uppercase">
+                            ROOM {activeSavedSession.roomCode}
+                          </span>
+                          <span className="px-1.5 py-0.5 bg-[#006876] text-white font-mono text-[9px] font-bold rounded-xs uppercase">
+                            {activeSavedSession.status === 'playing' ? 'In Match' : activeSavedSession.status === 'waiting' ? 'Lobby' : activeSavedSession.status}
+                          </span>
+                        </div>
+                        <p className="text-xs font-serif text-[#504440]">
+                          {activeSavedSession.playerSlot !== null 
+                            ? `Seat ${activeSavedSession.playerSlot + 1} (${activeSavedSession.playerSlot % 2 === 0 ? 'Team A' : 'Team B'}) • Target: ${activeSavedSession.targetScore} PTS • Current Score: ${activeSavedSession.scores[0]} - ${activeSavedSession.scores[1]}`
+                            : `Watching match as Spectator • Room: ${activeSavedSession.roomCode}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                      <button
+                        onClick={() => {
+                          localStorage.removeItem('cuban_dominoes_active_session');
+                          setActiveSavedSession(null);
+                        }}
+                        className="px-3 py-2 border border-[#83746f]/50 text-[#504440] hover:text-[#1d1c13] font-mono text-xs font-bold uppercase rounded-sm hover:bg-[#eee8da] transition-colors cursor-pointer"
+                      >
+                        {t.dismissReconnect}
+                      </button>
+                      <button
+                        onClick={() => reconnectToRoom(activeSavedSession.roomCode, activeSavedSession.playerSlot)}
+                        disabled={loading}
+                        className="px-5 py-2 btn-turquoise font-mono text-xs font-bold uppercase rounded-sm shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <span>{t.reconnectBtn}</span>
+                        <Play className="w-3.5 h-3.5 fill-white" />
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Navigation Tabs */}
               <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#d5c3bd]/40 pb-3">
                 <div className="flex items-center gap-2">
@@ -2601,10 +2963,58 @@ export default function App() {
                         />
                       </div>
 
+                      {/* Team Selection on Join */}
+                      <div className="bg-[#f3eddf] p-4 rounded-sm border border-[#83746f]/40 space-y-2 shadow-inner">
+                        <label className="text-xs font-mono font-bold uppercase tracking-wider text-[#1d1c13] flex items-center justify-between">
+                          <span className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-[#006876]" />
+                            {t.chooseTeam} (Optional)
+                          </span>
+                          <span className="text-[10px] text-[#006876] font-bold uppercase font-mono">
+                            {joiningTeam === 'auto' ? 'Any Available Seat' : joiningTeam === 0 ? 'Team A (Gold)' : 'Team B (Teal)'}
+                          </span>
+                        </label>
+                        <div className="grid grid-cols-3 gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setJoiningTeam('auto')}
+                            className={`py-2 px-1.5 rounded font-mono text-xs font-bold uppercase transition-all cursor-pointer border text-center ${
+                              joiningTeam === 'auto'
+                                ? 'bg-[#006876] text-white border-[#006876] shadow'
+                                : 'bg-[#e5dccb] hover:bg-[#d8ceba] text-[#504440] border-[#83746f]/30'
+                            }`}
+                          >
+                            ⚡ Auto
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setJoiningTeam(0)}
+                            className={`py-2 px-1.5 rounded font-mono text-xs font-bold uppercase transition-all cursor-pointer border text-center ${
+                              joiningTeam === 0
+                                ? 'bg-[#fbbf24] text-slate-950 border-amber-400 font-black shadow'
+                                : 'bg-[#e5dccb] hover:bg-[#d8ceba] text-[#504440] border-[#83746f]/30'
+                            }`}
+                          >
+                            Team A
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setJoiningTeam(1)}
+                            className={`py-2 px-1.5 rounded font-mono text-xs font-bold uppercase transition-all cursor-pointer border text-center ${
+                              joiningTeam === 1
+                                ? 'bg-teal-700 text-white border-teal-500 font-black shadow'
+                                : 'bg-[#e5dccb] hover:bg-[#d8ceba] text-[#504440] border-[#83746f]/30'
+                            }`}
+                          >
+                            Team B
+                          </button>
+                        </div>
+                      </div>
+
                       <div className="bg-[#f3eddf] border-l-4 border-[#006876] p-4 text-xs text-[#504440]">
                         <p className="font-mono text-[11px] leading-relaxed flex gap-2 items-start">
                           <Users className="w-4 h-4 text-[#006876] shrink-0 mt-0.5" />
-                          <span>Team play is cooperative. Partners sit opposite each other (Team A: Seats 1 & 3, Team B: Seats 2 & 4).</span>
+                          <span>Team play is cooperative. Partners sit opposite each other (Team A: Seats 1 & 3, Team B: Seats 2 & 4). You can also switch seats or teams anytime inside the table lobby.</span>
                         </p>
                       </div>
                     </div>
@@ -3026,42 +3436,115 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Team Selection and Arrow Navigation Bar */}
+                  <div className="bg-[#200d07]/90 border border-[#006876]/40 p-4 rounded-xl shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 flex-wrap justify-center sm:justify-start">
+                      <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#eee8da] flex items-center gap-2">
+                        <Users className="w-4 h-4 text-[#fbbf24]" />
+                        {t.chooseTeam}:
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#fbbf24]/10 border border-[#fbbf24]/30 text-xs font-mono font-bold text-[#fbbf24]">
+                          <span className="w-2 h-2 rounded-full bg-[#fbbf24]" />
+                          Team A (Seats 1 & 3)
+                        </div>
+                        <span className="text-[#83746f] font-mono font-bold text-xs">VS</span>
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/10 border border-teal-500/30 text-xs font-mono font-bold text-teal-300">
+                          <span className="w-2 h-2 rounded-full bg-teal-400" />
+                          Team B (Seats 2 & 4)
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {playerSlot !== null ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => shiftSeat('left')}
+                            disabled={loading}
+                            className="px-3 py-1.5 bg-[#200d07] hover:bg-[#fbbf24] border border-[#fbbf24]/50 hover:border-[#fbbf24] text-[#fbbf24] hover:text-slate-950 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
+                            title="Move 1 Seat Left (←)"
+                          >
+                            <ArrowLeft className="w-3.5 h-3.5" />
+                            <span>{t.moveLeft}</span>
+                          </button>
+
+                          <div className="px-3 py-1.5 rounded-lg bg-black/40 border border-white/10 text-xs font-mono text-center">
+                            <span className="text-white/60">Seat {playerSlot + 1}: </span>
+                            <span className={`font-bold ${playerSlot % 2 === 0 ? 'text-[#fbbf24]' : 'text-teal-300'}`}>
+                              Team {playerSlot % 2 === 0 ? 'A' : 'B'}
+                            </span>
+                          </div>
+
+                          <button
+                            onClick={() => shiftSeat('right')}
+                            disabled={loading}
+                            className="px-3 py-1.5 bg-[#200d07] hover:bg-[#fbbf24] border border-[#fbbf24]/50 hover:border-[#fbbf24] text-[#fbbf24] hover:text-slate-950 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
+                            title="Move 1 Seat Right (→)"
+                          >
+                            <span>{t.moveRight}</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => takeOpenSeat(undefined, 0)}
+                            disabled={loading}
+                            className="px-3 py-1.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-slate-950 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow flex items-center gap-1"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            {t.joinTeamA}
+                          </button>
+                          <button
+                            onClick={() => takeOpenSeat(undefined, 1)}
+                            disabled={loading}
+                            className="px-3 py-1.5 bg-teal-700 hover:bg-teal-600 border border-teal-400 text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow flex items-center gap-1"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            {t.joinTeamB}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {room.players.map((player, idx) => {
                       const teamNum = idx % 2;
                       const isMe = player && player.id === playerId;
-                      
                       const isCrown = Boolean(player?.isLastDominoWinner || (room.lastDominoWinnerSlot !== null && room.lastDominoWinnerSlot === idx));
+                      
                       return (
                         <div 
                           key={idx}
-                          className={`border rounded-xl p-5 relative flex flex-col items-center text-center justify-between h-48 transition-all ${
+                          className={`border rounded-xl p-4 relative flex flex-col items-center text-center justify-between min-h-[220px] transition-all ${
                             player 
                               ? isCrown
                                 ? 'bg-gradient-to-b from-amber-400/25 via-yellow-400/15 to-amber-500/25 border-amber-400 text-amber-200 shadow-lg shadow-amber-500/20'
                                 : isMe 
-                                  ? 'bg-[#fbbf24]/5 border-[#fbbf24]/30 shadow-inner' 
-                                  : 'bg-[#1c1c1f] border-white/5'
-                              : 'bg-transparent border-dashed border-white/10'
+                                  ? 'bg-[#fbbf24]/10 border-[#fbbf24]/50 shadow-lg shadow-amber-500/10 ring-1 ring-[#fbbf24]/40' 
+                                  : 'bg-[#1c1c1f] border-white/10'
+                              : 'bg-[#141416]/40 border-dashed border-white/10'
                           }`}
                         >
                           <div className="w-full flex items-center justify-between mb-2">
-                            <span className={`text-[9px] font-mono font-bold tracking-wider uppercase px-2 py-0.5 rounded-full ${
+                            <span className={`text-[10px] font-mono font-bold tracking-wider uppercase px-2.5 py-0.5 rounded-full ${
                               teamNum === 0 
-                                ? 'bg-[#fbbf24]/10 border border-[#fbbf24]/20 text-[#fbbf24]' 
-                                : 'bg-teal-500/10 border border-teal-500/20 text-teal-400'
+                                ? 'bg-[#fbbf24]/15 border border-[#fbbf24]/30 text-[#fbbf24]' 
+                                : 'bg-teal-500/15 border border-teal-500/30 text-teal-300'
                             }`}>
                               Team {teamNum === 0 ? 'A' : 'B'}
                             </span>
                             
-                            <span className="text-[10px] font-mono text-white/30 font-semibold">
-                              Slot {idx + 1}
+                            <span className="text-[10px] font-mono text-white/40 font-bold">
+                              Seat {idx + 1}
                             </span>
                           </div>
 
                           {player ? (
-                            <div className="space-y-2 flex-1 flex flex-col justify-center">
-                              <div className="w-12 h-12 rounded-full bg-[#111113] border border-white/5 flex items-center justify-center text-lg mx-auto shadow-md relative">
+                            <div className="space-y-2 flex-1 flex flex-col justify-center w-full">
+                              <div className="w-12 h-12 rounded-full bg-[#111113] border border-white/10 flex items-center justify-center text-lg mx-auto shadow-md relative">
                                 {player.type === 'bot' ? '🤖' : '👤'}
                                 {(player.isHost || (room.hostId && room.hostId !== 'hidden' && room.hostId === player.id) || (!room.hostId && idx === 0)) && (
                                   <span className="absolute -top-1 -right-1 bg-[#fe7328] text-[#111113] w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow" title={t.hostBadge}>⭐</span>
@@ -3073,7 +3556,7 @@ export default function App() {
                               <div>
                                 <p className="font-bold text-sm text-white flex items-center justify-center gap-1 flex-wrap">
                                   <span>{player.name}</span>
-                                  {isMe && <span className="text-[9px] bg-[#fbbf24] text-[#111113] px-1.5 py-0.2 rounded-md font-sans font-bold">YOU</span>}
+                                  {isMe && <span className="text-[9px] bg-[#fbbf24] text-slate-950 px-1.5 py-0.2 rounded-md font-sans font-bold shadow-sm">YOU</span>}
                                   {(player.isHost || (room.hostId && room.hostId !== 'hidden' && room.hostId === player.id) || (!room.hostId && idx === 0)) && (
                                     <span className="text-[8px] bg-[#fe7328]/20 border border-[#fe7328]/50 text-[#fe7328] px-1.5 py-0.5 rounded font-mono font-bold uppercase">{t.hostBadge}</span>
                                   )}
@@ -3108,36 +3591,74 @@ export default function App() {
                                       </span>
                                     )}
                                   </div>
+                                ) : player.isDisconnected ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 rounded font-mono font-bold mt-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                                    ⚠️ {t.playerDisconnected}
+                                  </span>
                                 ) : (
-                                  <p className="text-[10px] text-white/40 mt-0.5 font-sans">Human</p>
+                                  <p className="text-[10px] text-white/40 mt-0.5 font-sans">Human Player</p>
                                 )}
                               </div>
                             </div>
                           ) : (
-                            <div className="flex-1 flex flex-col justify-center items-center text-white/30 space-y-1">
-                              <UserPlus className="w-7 h-7 mx-auto stroke-1 text-white/20" />
-                              <p className="text-xs font-semibold">Empty Slot</p>
-                              {playerSlot === null ? (
+                            <div className="flex-1 flex flex-col justify-center items-center text-white/40 space-y-2 w-full py-2">
+                              <div className="w-10 h-10 rounded-full border border-dashed border-white/20 flex items-center justify-center text-white/30">
+                                <UserPlus className="w-5 h-5 stroke-1 text-white/30" />
+                              </div>
+                              <p className="text-xs font-medium text-white/50">Vacant Seat {idx + 1}</p>
+
+                              {playerSlot === null && (
                                 <button
                                   onClick={() => takeOpenSeat(idx)}
                                   disabled={loading}
-                                  className="mt-1 px-3 py-1 bg-[#006876] hover:bg-[#008092] text-white font-mono text-[11px] font-bold rounded uppercase cursor-pointer shadow transition-all flex items-center gap-1"
+                                  className={`mt-1 py-1.5 px-3 rounded-lg font-mono text-[11px] font-bold uppercase transition-all cursor-pointer shadow flex items-center justify-center gap-1 ${
+                                    teamNum === 0
+                                      ? 'bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-slate-950'
+                                      : 'bg-teal-700 hover:bg-teal-600 text-white'
+                                  }`}
                                 >
+                                  <UserPlus className="w-3.5 h-3.5" />
                                   Take Seat {idx + 1}
                                 </button>
-                              ) : (
-                                <p className="text-[10px]">Lobby connecting...</p>
                               )}
                             </div>
                           )}
 
+                          {/* Footer Actions */}
+                          {player && isMe && (
+                            <div className="w-full pt-2 flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => shiftSeat('left')}
+                                disabled={loading}
+                                className="flex-1 py-1.5 px-1.5 bg-[#200d07] hover:bg-[#fbbf24] border border-[#fbbf24]/40 hover:border-[#fbbf24] text-[#fbbf24] hover:text-slate-950 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm"
+                                title="Move Left"
+                              >
+                                <ArrowLeft className="w-3 h-3" />
+                                <span>{t.moveLeft}</span>
+                              </button>
+                              <button
+                                onClick={() => shiftSeat('right')}
+                                disabled={loading}
+                                className="flex-1 py-1.5 px-1.5 bg-[#200d07] hover:bg-[#fbbf24] border border-[#fbbf24]/40 hover:border-[#fbbf24] text-[#fbbf24] hover:text-slate-950 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm"
+                                title="Move Right"
+                              >
+                                <span>{t.moveRight}</span>
+                                <ArrowRight className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+
                           {player && isHost && !isMe && (
-                            <button
-                              onClick={() => removeSlot(idx)}
-                              className="mt-2 text-[10px] font-bold text-red-400 hover:text-red-300 hover:bg-red-950/40 px-2.5 py-1 rounded-lg border border-red-800/40 transition-all cursor-pointer flex items-center justify-center gap-1 mx-auto"
-                            >
-                              <span>✕</span> {t.kickSlot}
-                            </button>
+                            <div className="w-full pt-2 flex items-center justify-center">
+                              <button
+                                onClick={() => removeSlot(idx)}
+                                className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 hover:bg-red-950/40 px-2.5 py-1 rounded-md border border-red-800/40 transition-all cursor-pointer flex items-center justify-center gap-1"
+                                title={`Remove ${player.name} from this seat`}
+                              >
+                                <span>✕</span> {player.type === 'bot' ? 'Remove Bot' : t.kickSlot}
+                              </button>
+                            </div>
                           )}
                         </div>
                       );
@@ -3196,11 +3717,17 @@ export default function App() {
 
                           <button
                             onClick={() => addBot()}
-                            disabled={room.players.filter(p => p !== null).length === 4}
-                            className="px-5 py-3 rounded-xl bg-[#1c1c1f] hover:bg-white/5 border border-white/5 text-white font-semibold text-xs transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer uppercase font-mono"
+                            disabled={room.players.every(p => p !== null)}
+                            className="px-5 py-3 rounded-xl bg-[#1c1c1f] hover:bg-white/10 border border-amber-400/30 text-white font-semibold text-xs transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer uppercase font-mono shadow-md"
+                            title={room.players.every(p => p !== null) ? "Table is full (4/4)" : "Automatically adds a bot to the first vacant space"}
                           >
                             <Bot className="w-4 h-4 text-[#fbbf24]" />
-                            {t.addBotBtn}
+                            <span>{t.addBotBtn}</span>
+                            {room.players.some(p => p === null) && (
+                              <span className="text-[10px] bg-[#fbbf24]/20 text-[#fbbf24] px-1.5 py-0.5 rounded font-mono font-bold">
+                                Auto
+                              </span>
+                            )}
                           </button>
 
                           <button
@@ -3320,6 +3847,11 @@ export default function App() {
                                 {player?.name || `Seat ${idx + 1}`}
                               </span>
                               <span className={`text-[8px] px-1.5 py-0.5 rounded-md uppercase font-sans font-black shrink-0 whitespace-nowrap ${(isTurn || isCrown) ? 'bg-[#111113] text-[#fbbf24]' : 'bg-teal-500 text-slate-950'}`}>PARTNER</span>
+                              {player?.isDisconnected && (
+                                <span className="text-[8px] bg-amber-400/20 border border-amber-400/40 text-amber-300 px-1 py-0.2 rounded font-mono font-bold shrink-0 animate-pulse" title="Player temporarily disconnected">
+                                  ⚠️ OFFLINE
+                                </span>
+                              )}
                               {isBot && (
                                 <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-mono font-extrabold uppercase border shrink-0 whitespace-nowrap ${
                                   (isTurn || isCrown)
@@ -3347,6 +3879,22 @@ export default function App() {
                             <div className="w-full bg-black/40 h-1 rounded-full overflow-hidden mt-1 max-w-[140px]">
                               <div className={`h-full transition-all duration-300 ${remSec <= 5 ? 'bg-red-500' : remSec <= 10 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${ratio * 100}%` }} />
                             </div>
+                          )}
+                          {canAskBotPartnerToStart && isBot && (
+                            <button
+                              type="button"
+                              onClick={letBotPartnerStartWithDouble}
+                              disabled={botStartingLoading}
+                              className="mt-1.5 px-3 py-1 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] active:scale-95 text-slate-950 font-mono font-bold text-[10px] shadow-md border border-[#f59e0b] flex items-center gap-1.5 transition-all cursor-pointer"
+                              title="Ask your bot partner to open the round with their highest double"
+                            >
+                              {botStartingLoading ? (
+                                <RefreshCw className="w-3 h-3 animate-spin text-slate-950" />
+                              ) : (
+                                <Sparkles className="w-3 h-3 text-slate-950" />
+                              )}
+                              <span>{botStartingLoading ? "Asking Partner..." : "🤖 Start Round (Double)"}</span>
+                            </button>
                           )}
                         </div>
                       );
@@ -3392,6 +3940,11 @@ export default function App() {
                               <span className="text-xs font-bold leading-none truncate max-w-[100px] inline-block">
                                 {player?.name || `Seat ${idx + 1}`}
                               </span>
+                              {player?.isDisconnected && (
+                                <span className="text-[8px] bg-amber-400/20 border border-amber-400/40 text-amber-300 px-1 py-0.2 rounded font-mono font-bold shrink-0 animate-pulse" title="Player temporarily disconnected">
+                                  ⚠️ OFFLINE
+                                </span>
+                              )}
                               {isBot && (
                                 <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-mono font-extrabold uppercase border shrink-0 whitespace-nowrap ${
                                   (isTurn || isCrown)
@@ -3466,6 +4019,11 @@ export default function App() {
                               <span className="text-xs font-bold leading-none truncate max-w-[100px] inline-block">
                                 {player?.name || `Seat ${idx + 1}`}
                               </span>
+                              {player?.isDisconnected && (
+                                <span className="text-[8px] bg-amber-400/20 border border-amber-400/40 text-amber-300 px-1 py-0.2 rounded font-mono font-bold shrink-0 animate-pulse" title="Player temporarily disconnected">
+                                  ⚠️ OFFLINE
+                                </span>
+                              )}
                               {isBot && (
                                 <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-mono font-extrabold uppercase border shrink-0 whitespace-nowrap ${
                                   (isTurn || isCrown)
@@ -3741,6 +4299,11 @@ export default function App() {
                               ) : (
                                 <span className="text-[8px] px-1 py-0.5 rounded-md uppercase font-mono bg-white/10 text-white/60 shrink-0 whitespace-nowrap">
                                   Slot {targetSlot + 1}
+                                </span>
+                              )}
+                              {targetPlayer?.isDisconnected && (
+                                <span className="text-[8px] bg-amber-400/20 border border-amber-400/40 text-amber-300 px-1 py-0.2 rounded font-mono font-bold shrink-0 animate-pulse" title="Player temporarily disconnected">
+                                  ⚠️ OFFLINE
                                 </span>
                               )}
                               {isBot && (
@@ -4229,6 +4792,11 @@ export default function App() {
                                         {isFaceDown ? "[🔒|🔒] Selected" : `[${selectedItem.val[0]}|${selectedItem.val[1]}] Selected`}
                                       </span>
                                     )}
+                                    {room.board.length === 0 && !myHandHasDoubles && canAskBotPartnerToStart && (
+                                      <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-400/40 text-[#fbbf24] font-mono font-bold text-[10px] hidden sm:inline-flex items-center gap-1">
+                                        <Sparkles className="w-2.5 h-2.5" /> No doubles in hand
+                                      </span>
+                                    )}
                                   </div>
                                   <span className="text-[11px] text-white/80 font-sans mt-0.5">
                                     {selectedItem && isSelectedPlayable
@@ -4238,13 +4806,31 @@ export default function App() {
                                           ? "Matches both ends! Choose Left or Right below."
                                           : `Matches ${matchesLeft ? 'Left' : 'Right'} end. Click Play button, press Space/Enter, or click tile again.`
                                       : room.board.length === 0
-                                        ? "Drag to organize, or click any tile to select and open the match."
+                                        ? canAskBotPartnerToStart
+                                          ? `Play any tile to open, or let ${botPartner?.name || 'your bot partner'} start with their highest double.`
+                                          : "Drag to organize, or click any tile to select and open the match."
                                         : "Drag freely to organize, or click a highlighted tile to select and play."}
                                   </span>
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center flex-wrap justify-end">
+                                {canAskBotPartnerToStart && room.board.length === 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={letBotPartnerStartWithDouble}
+                                    disabled={botStartingLoading}
+                                    className="px-4 py-2 bg-[#fbbf24] hover:bg-[#f59e0b] active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg border border-[#f59e0b] transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                                    title={t.letBotStartDoubleDesc}
+                                  >
+                                    {botStartingLoading ? (
+                                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                                    ) : (
+                                      <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+                                    )}
+                                    <span>{botStartingLoading ? t.askingBotPartner : `🤖 Let ${botPartner?.name || 'Bot'} Start (Double)`}</span>
+                                  </button>
+                                )}
                                 {selectedItem && isSelectedPlayable ? (
                                   room.board.length === 0 ? (
                                     <button

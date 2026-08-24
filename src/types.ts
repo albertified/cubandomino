@@ -20,6 +20,8 @@ export interface Player {
   dominoStreak?: number; // Number of consecutive domino wins in a row
   isLastDominoWinner?: boolean; // True if this player played their last tile in the previous domino win
   botDifficulty?: BotDifficulty;
+  lastSeen?: number; // Timestamp (ms) of latest heartbeat/interaction
+  isDisconnected?: boolean; // Flag when player connection dropped
 }
 
 export type GameStatus = 'waiting' | 'selecting_starter' | 'playing' | 'round_ended' | 'game_over';

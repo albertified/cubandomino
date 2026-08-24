@@ -170,6 +170,68 @@ function hasValidMoves(hand: Domino[], board: Domino[]): boolean {
 // Select the best bot move based on difficulty (Novice, Intermediate, Pro)
 type BotDifficulty = 'novice' | 'intermediate' | 'pro';
 
+// Find the best double in a hand according to Cuban Doble Nueve opening strategy
+function getBotOpeningDoubleMove(
+  hand: Domino[],
+  difficulty: BotDifficulty = 'intermediate',
+  playerSlot?: number,
+  room?: GameRoom
+): { tileIndex: number; side: 'right'; isDouble: boolean } | null {
+  if (hand.length === 0) return null;
+
+  const doubleIndices: number[] = [];
+  hand.forEach(([v1, v2], idx) => {
+    if (v1 === v2) doubleIndices.push(idx);
+  });
+
+  // If bot holds one or more doubles, pick the best double!
+  if (doubleIndices.length > 0) {
+    if (difficulty === 'novice') {
+      const chosenIdx = doubleIndices[cryptoRandomInt(doubleIndices.length)];
+      return { tileIndex: chosenIdx, side: 'right', isDouble: true };
+    }
+
+    if (difficulty === 'intermediate') {
+      // Pick highest value double (e.g. 9-9 > 8-8 > 7-7)
+      let bestIdx = doubleIndices[0];
+      let bestSum = -1;
+      for (const idx of doubleIndices) {
+        const sum = hand[idx][0] + hand[idx][1];
+        if (sum > bestSum) {
+          bestSum = sum;
+          bestIdx = idx;
+        }
+      }
+      return { tileIndex: bestIdx, side: 'right', isDouble: true };
+    }
+
+    // PRO: Cuban Master opening strategy for doubles
+    // Count suit frequencies in hand (0..9)
+    const suitCounts = new Array(10).fill(0);
+    hand.forEach(([v1, v2]) => {
+      suitCounts[v1]++;
+      if (v1 !== v2) suitCounts[v2]++;
+    });
+
+    let bestIdx = doubleIndices[0];
+    let bestScore = -1000;
+    for (const idx of doubleIndices) {
+      const v = hand[idx][0];
+      // Total value points + heavy bonus for holding companion tiles of that suit (suit control / "suya")
+      const score = (v * 2) * 5 + (suitCounts[v] * 35);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = idx;
+      }
+    }
+    return { tileIndex: bestIdx, side: 'right', isDouble: true };
+  }
+
+  // Fallback if bot has no doubles in hand: play strongest heavy tile
+  const move = getBotMove(hand, [], difficulty, playerSlot, room);
+  return move ? { tileIndex: move.tileIndex, side: 'right', isDouble: false } : null;
+}
+
 function getBotMove(
   hand: Domino[],
   board: Domino[],
@@ -179,8 +241,13 @@ function getBotMove(
 ): { tileIndex: number; side: 'left' | 'right' } | null {
   if (hand.length === 0) return null;
 
-  // 1. OPENING MOVE (Empty Board)
+  // 1. OPENING MOVE (Empty Board) - prioritize doubles
   if (board.length === 0) {
+    const openingDoubleMove = getBotOpeningDoubleMove(hand, difficulty, playerSlot, room);
+    if (openingDoubleMove) {
+      return { tileIndex: openingDoubleMove.tileIndex, side: 'right' };
+    }
+
     if (difficulty === 'novice') {
       const randomIdx = cryptoRandomInt(hand.length);
       return { tileIndex: randomIdx, side: 'right' };
@@ -192,7 +259,7 @@ function getBotMove(
       for (let i = 0; i < hand.length; i++) {
         const [v1, v2] = hand[i];
         const isDouble = v1 === v2;
-        const score = v1 + v2 + (isDouble ? 100 : 0);
+        const score = v1 + v2 + (isDouble ? 200 : 0);
         if (score > bestScore) {
           bestScore = score;
           bestIndex = i;
@@ -217,11 +284,11 @@ function getBotMove(
       const isDouble = v1 === v2;
       const totalPoints = v1 + v2;
 
-      let score = totalPoints + (isDouble ? 120 : 0);
+      let score = totalPoints + (isDouble ? 250 : 0);
 
       // Suit Control: holding 4+ of a suit gives massive advantage
       if (isDouble) {
-        score += suitCounts[v1] * 25;
+        score += suitCounts[v1] * 35;
       } else {
         score += (suitCounts[v1] + suitCounts[v2]) * 12;
       }
@@ -732,6 +799,21 @@ function getRequesterPlayerId(req: express.Request): string | undefined {
   return rawId ? sanitizeId(rawId) : undefined;
 }
 
+// Update player heartbeat and connection state
+function updatePlayerPresence(room: GameRoom, playerId?: string) {
+  if (!playerId || playerId === 'hidden') return;
+  const player = room.players.find(p => p && p.id === playerId);
+  if (player && player.type === 'human') {
+    const wasDisconnected = player.isDisconnected;
+    player.lastSeen = Date.now();
+    player.isDisconnected = false;
+    if (wasDisconnected) {
+      room.logs.push(`⚡ ${player.name} reconnected to Seat ${player.slot + 1}!`);
+      room.lastUpdateTime = Date.now();
+    }
+  }
+}
+
 // Sanitize room data for client responses to prevent hand-peeking / network inspection cheats
 function sanitizeRoomForPlayer(room: GameRoom, requesterPlayerId?: string): GameRoom {
   const isEndState = room.status === 'round_ended' || room.status === 'game_over';
@@ -758,7 +840,9 @@ function sanitizeRoomForPlayer(room: GameRoom, requesterPlayerId?: string): Game
       ...player,
       id,
       isHost: isPlayerHost,
-      hand
+      hand,
+      lastSeen: player.lastSeen,
+      isDisconnected: Boolean(player.isDisconnected)
     };
   });
 
@@ -798,8 +882,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Get Public Lobbies List
-app.get('/api/public-rooms', (req, res) => {
+// Get Public Lobbies List (supports both /api/public-rooms and /api/rooms/public)
+app.get(['/api/public-rooms', '/api/rooms/public'], (req, res) => {
   const publicRooms: RoomListItem[] = [];
   const now = Date.now();
 
@@ -902,10 +986,10 @@ app.post('/api/rooms', (req, res) => {
   res.json({ room: sanitizeRoomForPlayer(newRoom, firstPlayer.id), playerSlot: 0 });
 });
 
-// Join Room
+// Join Room (Supports direct join and seamless match reconnect)
 app.post('/api/rooms/:code/join', (req, res) => {
   const code = sanitizeRoomCode(req.params.code);
-  const { playerName, playerId, slot } = req.body || {};
+  const { playerName, playerId, slot, preferredTeam, claimSlot } = req.body || {};
   const cleanName = sanitizeString(playerName, 24, 'Player');
   const cleanId = sanitizeId(playerId, cryptoRandomId('p'));
 
@@ -915,22 +999,91 @@ app.post('/api/rooms/:code/join', (req, res) => {
     return res.status(404).json({ error: 'Room not found' });
   }
 
-  // Check if player is already in the room
+  // 1. Check if player with this exact ID is already sitting in the room (seamless instant rejoin)
   const existingPlayerIndex = room.players.findIndex(p => p && p.id === cleanId);
   if (existingPlayerIndex !== -1) {
-    return res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: existingPlayerIndex });
+    const p = room.players[existingPlayerIndex]!;
+    const wasDisconnected = p.isDisconnected;
+    p.lastSeen = Date.now();
+    p.isDisconnected = false;
+    if (cleanName && cleanName.length > 0 && p.name !== cleanName) {
+      p.name = cleanName;
+    }
+    if (wasDisconnected) {
+      room.logs.push(`⚡ ${p.name} reconnected to Seat ${existingPlayerIndex + 1}!`);
+      room.lastUpdateTime = Date.now();
+    }
+    return res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: existingPlayerIndex, reconnected: true });
   }
 
+  // 2. Check if player is an active spectator
+  const existingSpectatorIndex = (room.spectators || []).findIndex(s => s.id === cleanId);
+  if (existingSpectatorIndex !== -1) {
+    return res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: null, role: 'spectator' });
+  }
+
+  // 3. Check if player explicitly requested to claim a disconnected seat in an ongoing match
+  if (claimSlot !== undefined && typeof claimSlot === 'number' && claimSlot >= 0 && claimSlot < 4) {
+    const targetPlayer = room.players[claimSlot];
+    if (targetPlayer) {
+      targetPlayer.id = cleanId;
+      if (cleanName) targetPlayer.name = cleanName;
+      targetPlayer.lastSeen = Date.now();
+      targetPlayer.isDisconnected = false;
+      targetPlayer.type = 'human';
+      room.logs.push(`⚡ ${targetPlayer.name} reconnected and reclaimed Seat ${claimSlot + 1}.`);
+      room.lastUpdateTime = Date.now();
+      return res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: claimSlot, reconnected: true });
+    }
+  }
+
+  // 4. If game is already active (playing / round ended / selecting starter)
   if (room.status !== 'waiting') {
-    return res.status(400).json({ error: 'Game has already started in this room' });
+    // Check if a human with matching name is disconnected
+    const matchIdx = room.players.findIndex(p => p && p.type === 'human' && (p.isDisconnected || p.name.toLowerCase() === cleanName.toLowerCase()));
+    if (matchIdx !== -1) {
+      const targetPlayer = room.players[matchIdx]!;
+      targetPlayer.id = cleanId;
+      targetPlayer.lastSeen = Date.now();
+      targetPlayer.isDisconnected = false;
+      targetPlayer.type = 'human';
+      room.logs.push(`⚡ ${targetPlayer.name} reconnected to the match at Seat ${matchIdx + 1}!`);
+      room.lastUpdateTime = Date.now();
+      return res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: matchIdx, reconnected: true });
+    }
+
+    // Otherwise offer to spectate or reclaim seat
+    const disconnectedSlots = room.players
+      .map((p, idx) => p ? { slot: idx, name: p.name, isDisconnected: Boolean(p.isDisconnected), type: p.type } : null)
+      .filter(p => p !== null && (p.isDisconnected || p.type === 'human'));
+
+    return res.status(400).json({ 
+      error: 'Game has already started in this room', 
+      canSpectate: true,
+      canReclaimSeats: disconnectedSlots 
+    });
   }
 
-  // Find slot
+  // 5. Waiting Lobby: Find slot based on explicit slot, preferred team, or first vacant slot
   let targetSlot = -1;
   if (slot !== undefined) {
     const parsedSlot = sanitizeInt(slot, 0, 3, -1);
     if (parsedSlot >= 0 && parsedSlot < 4 && !room.players[parsedSlot]) {
       targetSlot = parsedSlot;
+    }
+  }
+
+  // If preferredTeam (0 for Team A, 1 for Team B) is passed and targetSlot hasn't been set
+  if (targetSlot === -1 && preferredTeam !== undefined) {
+    const team = sanitizeInt(preferredTeam, 0, 1, -1);
+    if (team === 0) {
+      // Team A slots: 0, 2
+      if (!room.players[0]) targetSlot = 0;
+      else if (!room.players[2]) targetSlot = 2;
+    } else if (team === 1) {
+      // Team B slots: 1, 3
+      if (!room.players[1]) targetSlot = 1;
+      else if (!room.players[3]) targetSlot = 3;
     }
   }
 
@@ -951,19 +1104,99 @@ app.post('/api/rooms/:code/join', (req, res) => {
     }
   }
 
+  const teamLabel = targetSlot % 2 === 0 ? 'Team A' : 'Team B';
   const newPlayer: Player = {
     id: cleanId,
     name: cleanName || `Player ${targetSlot + 1}`,
     type: 'human',
     slot: targetSlot,
-    hand: []
+    hand: [],
+    lastSeen: Date.now(),
+    isDisconnected: false
   };
 
   room.players[targetSlot] = newPlayer;
-  room.logs.push(`👥 ${newPlayer.name} joined the room (Slot ${targetSlot + 1}).`);
+  room.logs.push(`👥 ${newPlayer.name} joined the table on ${teamLabel} (Slot ${targetSlot + 1}).`);
   room.lastUpdateTime = Date.now();
 
   res.json({ room: sanitizeRoomForPlayer(room, newPlayer.id), playerSlot: targetSlot });
+});
+
+// Reconnect to active room explicitly
+app.post('/api/rooms/:code/reconnect', (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const { playerName, playerId, slot } = req.body || {};
+  const cleanName = sanitizeString(playerName, 24, 'Player');
+  const cleanId = sanitizeId(playerId);
+
+  const room = rooms.get(code);
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found or game has concluded.' });
+  }
+
+  // 1. By exact ID match
+  if (cleanId) {
+    const existingIndex = room.players.findIndex(p => p && p.id === cleanId);
+    if (existingIndex !== -1) {
+      const p = room.players[existingIndex]!;
+      p.lastSeen = Date.now();
+      p.isDisconnected = false;
+      if (cleanName && cleanName.length > 0) p.name = cleanName;
+      room.logs.push(`⚡ ${p.name} reconnected to Seat ${existingIndex + 1}!`);
+      room.lastUpdateTime = Date.now();
+      return res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: existingIndex, reconnected: true });
+    }
+  }
+
+  // 2. By slot match (if reclaiming a disconnected seat)
+  const parsedSlot = typeof slot === 'number' ? slot : parseInt(slot, 10);
+  if (!isNaN(parsedSlot) && parsedSlot >= 0 && parsedSlot < 4) {
+    const targetPlayer = room.players[parsedSlot];
+    if (targetPlayer) {
+      targetPlayer.id = cleanId || cryptoRandomId('p');
+      if (cleanName) targetPlayer.name = cleanName;
+      targetPlayer.lastSeen = Date.now();
+      targetPlayer.isDisconnected = false;
+      targetPlayer.type = 'human';
+      room.logs.push(`⚡ ${targetPlayer.name} reconnected and reclaimed Seat ${parsedSlot + 1}.`);
+      room.lastUpdateTime = Date.now();
+      return res.json({ room: sanitizeRoomForPlayer(room, targetPlayer.id), playerSlot: parsedSlot, reconnected: true });
+    }
+  }
+
+  // 3. By Name match
+  if (cleanName) {
+    const matchIdx = room.players.findIndex(p => p && p.name.toLowerCase() === cleanName.toLowerCase());
+    if (matchIdx !== -1) {
+      const p = room.players[matchIdx]!;
+      p.id = cleanId || cryptoRandomId('p');
+      p.lastSeen = Date.now();
+      p.isDisconnected = false;
+      p.type = 'human';
+      room.logs.push(`⚡ ${p.name} reconnected to Seat ${matchIdx + 1}!`);
+      room.lastUpdateTime = Date.now();
+      return res.json({ room: sanitizeRoomForPlayer(room, p.id), playerSlot: matchIdx, reconnected: true });
+    }
+  }
+
+  return res.status(400).json({ error: 'Could not find matching seat to reclaim.' });
+});
+
+// Explicit Heartbeat Endpoint
+app.post('/api/rooms/:code/heartbeat', (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const playerId = getRequesterPlayerId(req);
+  const room = rooms.get(code);
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (playerId) {
+    updatePlayerPresence(room, playerId);
+  }
+
+  res.json({ ok: true, status: room.status, lastUpdateTime: room.lastUpdateTime });
 });
 
 // Join Room as Spectator
@@ -1070,20 +1303,26 @@ app.get('/api/rooms/:code', (req, res) => {
     return res.status(404).json({ error: 'Room not found' });
   }
 
+  const requesterId = getRequesterPlayerId(req);
+  if (requesterId) {
+    updatePlayerPresence(room, requesterId);
+  }
+
   // Prune reactions older than 8 seconds
   if (room.reactions) {
     const cutoff = Date.now() - 8000;
     room.reactions = room.reactions.filter(r => r.timestamp > cutoff);
   }
 
-  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
+  res.json({ room: sanitizeRoomForPlayer(room, requesterId) });
 });
 
-// Add Bot
+// Add Bot (places in specified slot or automatically in first vacant space)
 app.post('/api/rooms/:code/bot', (req, res) => {
   const code = sanitizeRoomCode(req.params.code);
   const requesterId = sanitizeId(req.body?.requesterId);
   const requestedDiff = req.body?.difficulty;
+  const requestedSlot = req.body?.slot !== undefined ? sanitizeInt(req.body.slot, 0, 3, -1) : -1;
   const room = rooms.get(code);
 
   if (!room) {
@@ -1100,9 +1339,16 @@ app.post('/api/rooms/:code/bot', (req, res) => {
     return res.status(400).json({ error: 'Cannot add bots to an active game' });
   }
 
-  const emptySlot = room.players.findIndex(p => p === null);
-  if (emptySlot === -1) {
-    return res.status(400).json({ error: 'Room is full' });
+  let targetSlot = -1;
+  if (requestedSlot >= 0 && requestedSlot < 4 && !room.players[requestedSlot]) {
+    targetSlot = requestedSlot;
+  } else {
+    // Automatically find the first vacant space
+    targetSlot = room.players.findIndex(p => p === null);
+  }
+
+  if (targetSlot === -1) {
+    return res.status(400).json({ error: 'All table seats are currently occupied' });
   }
 
   const difficulty: BotDifficulty = requestedDiff && ['novice', 'intermediate', 'pro'].includes(requestedDiff)
@@ -1110,24 +1356,177 @@ app.post('/api/rooms/:code/bot', (req, res) => {
     : (room.defaultBotDifficulty || 'intermediate');
 
   const botNames = ['Bot Pepe', 'Bot Maria', 'Bot Jose', 'Bot Caridad'];
-  const botName = botNames[emptySlot] || `Bot ${emptySlot + 1}`;
+  const botName = botNames[targetSlot] || `Bot ${targetSlot + 1}`;
+  const teamLabel = targetSlot % 2 === 0 ? 'Team A' : 'Team B';
 
   const botPlayer: Player = {
-    id: `bot_${emptySlot}`,
+    id: `bot_${targetSlot}`,
     name: botName,
     type: 'bot',
-    slot: emptySlot,
+    slot: targetSlot,
     hand: [],
     botDifficulty: difficulty,
   };
 
   const diffLabel = difficulty === 'pro' ? 'Pro Master 🧠' : difficulty === 'novice' ? 'Novice 🎲' : 'Intermediate ⚡';
 
-  room.players[emptySlot] = botPlayer;
-  room.logs.push(`🤖 ${botName} (${diffLabel}) has been added to Slot ${emptySlot + 1}.`);
+  room.players[targetSlot] = botPlayer;
+  room.logs.push(`🤖 ${botName} (${diffLabel}) was added to ${teamLabel} (Slot ${targetSlot + 1}).`);
   room.lastUpdateTime = Date.now();
 
-  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)), addedSlot: targetSlot });
+});
+
+// Shift Seat Left or Right (intuitive arrow system with jump over occupied seats)
+app.post('/api/rooms/:code/shift-seat', (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const { playerId, direction } = req.body || {};
+  const cleanId = sanitizeId(playerId);
+  const room = rooms.get(code);
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (room.status !== 'waiting') {
+    return res.status(400).json({ error: 'Cannot change seats once the match has started' });
+  }
+
+  const currentSlot = room.players.findIndex(p => p && p.id === cleanId);
+  if (currentSlot === -1) {
+    return res.status(400).json({ error: 'Player is not currently seated at the table' });
+  }
+
+  const step = direction === 'left' ? -1 : 1;
+  let targetSlot = -1;
+
+  // Search in the specified direction for the closest slot that is completely vacant (jumping over any occupied seat)
+  for (let i = 1; i <= 3; i++) {
+    const candidate = (currentSlot + step * i + 8) % 4;
+    const occupant = room.players[candidate];
+    if (!occupant) {
+      targetSlot = candidate;
+      break;
+    }
+  }
+
+  if (targetSlot === -1) {
+    return res.status(400).json({ error: 'All other seats are currently occupied. Cannot jump.' });
+  }
+
+  const movingPlayer = room.players[currentSlot]!;
+  const destTeam = targetSlot % 2 === 0 ? 'Team A' : 'Team B';
+
+  movingPlayer.slot = targetSlot;
+  room.players[targetSlot] = movingPlayer;
+  room.players[currentSlot] = null;
+
+  const stepsTaken = ((targetSlot - currentSlot) * step + 8) % 4 || 4;
+  if (stepsTaken > 1) {
+    room.logs.push(`🪑 ${movingPlayer.name} jumped ${direction === 'left' ? 'left' : 'right'} past occupied seats into ${destTeam} (Seat ${targetSlot + 1}).`);
+  } else {
+    room.logs.push(`🪑 ${movingPlayer.name} moved ${direction === 'left' ? 'left' : 'right'} to ${destTeam} (Seat ${targetSlot + 1}).`);
+  }
+
+  room.lastUpdateTime = Date.now();
+  res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: targetSlot });
+});
+
+// Switch Seat / Move to a Specific Slot in Lobby
+app.post('/api/rooms/:code/switch-slot', (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const { playerId, targetSlot } = req.body || {};
+  const cleanId = sanitizeId(playerId);
+  const destSlot = sanitizeInt(targetSlot, 0, 3, -1);
+  const room = rooms.get(code);
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (room.status !== 'waiting') {
+    return res.status(400).json({ error: 'Cannot change seats once the match has started' });
+  }
+
+  if (destSlot < 0 || destSlot > 3) {
+    return res.status(400).json({ error: 'Invalid destination slot' });
+  }
+
+  const currentSlot = room.players.findIndex(p => p && p.id === cleanId);
+  if (currentSlot === -1) {
+    return res.status(400).json({ error: 'Player is not currently seated at the table' });
+  }
+
+  if (currentSlot === destSlot) {
+    return res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: currentSlot });
+  }
+
+  const movingPlayer = room.players[currentSlot]!;
+  const occupant = room.players[destSlot];
+
+  if (occupant) {
+    return res.status(400).json({ error: `Seat ${destSlot + 1} is already occupied by ${occupant.name}.` });
+  }
+
+  const destTeam = destSlot % 2 === 0 ? 'Team A' : 'Team B';
+
+  // Empty slot: move directly
+  movingPlayer.slot = destSlot;
+  room.players[destSlot] = movingPlayer;
+  room.players[currentSlot] = null;
+  room.logs.push(`🪑 ${movingPlayer.name} moved to ${destTeam} (Seat ${destSlot + 1}).`);
+
+  room.lastUpdateTime = Date.now();
+  res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: destSlot });
+});
+
+// Switch Team in Lobby (Team A <-> Team B)
+app.post('/api/rooms/:code/switch-team', (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const { playerId, targetTeam } = req.body || {};
+  const cleanId = sanitizeId(playerId);
+  const room = rooms.get(code);
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (room.status !== 'waiting') {
+    return res.status(400).json({ error: 'Cannot switch teams once the match has started' });
+  }
+
+  const currentSlot = room.players.findIndex(p => p && p.id === cleanId);
+  if (currentSlot === -1) {
+    return res.status(400).json({ error: 'Player is not currently seated at the table' });
+  }
+
+  const currentTeam = currentSlot % 2;
+  const desiredTeam = targetTeam !== undefined ? sanitizeInt(targetTeam, 0, 1, 1 - currentTeam) : 1 - currentTeam;
+
+  if (currentTeam === desiredTeam) {
+    return res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: currentSlot });
+  }
+
+  // Candidate slots for desired team
+  const targetSlots = desiredTeam === 0 ? [0, 2] : [1, 3];
+
+  // Find a completely vacant slot in the desired team
+  const chosenSlot = targetSlots.find(s => room.players[s] === null);
+
+  if (chosenSlot === undefined) {
+    return res.status(400).json({ error: `Team ${desiredTeam === 0 ? 'A' : 'B'} has no vacant seats.` });
+  }
+
+  const movingPlayer = room.players[currentSlot]!;
+  const destTeamName = desiredTeam === 0 ? 'Team A' : 'Team B';
+
+  movingPlayer.slot = chosenSlot;
+  room.players[chosenSlot] = movingPlayer;
+  room.players[currentSlot] = null;
+  room.logs.push(`🎽 ${movingPlayer.name} switched to ${destTeamName} (Seat ${chosenSlot + 1}).`);
+
+  room.lastUpdateTime = Date.now();
+  res.json({ room: sanitizeRoomForPlayer(room, cleanId), playerSlot: chosenSlot });
 });
 
 // Update specific bot difficulty
@@ -1579,6 +1978,78 @@ app.post('/api/rooms/:code/play', (req, res) => {
   res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
+// Let Bot Partner Start the Round with a Double
+app.post(['/api/rooms/:code/bot-partner-start', '/api/rooms/:code/bot-start-double'], (req, res) => {
+  const code = sanitizeRoomCode(req.params.code);
+  const playerId = sanitizeId(req.body?.playerId);
+  const room = rooms.get(code);
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (room.status !== 'playing') {
+    return res.status(400).json({ error: 'Game is not currently active' });
+  }
+
+  if (room.board.length > 0) {
+    return res.status(400).json({ error: 'Round has already started with a tile on the board' });
+  }
+
+  const requestingPlayer = room.players.find(p => p && p.id === playerId);
+  if (!requestingPlayer) {
+    return res.status(404).json({ error: 'Player not found in this room' });
+  }
+
+  const requesterSlot = requestingPlayer.slot;
+
+  // Verify that requester is on the starting team
+  if (requesterSlot % 2 !== room.startingTeam) {
+    const startingTeamName = room.startingTeam === 0 ? 'Team A (Slots 1 & 3)' : 'Team B (Slots 2 & 4)';
+    return res.status(400).json({ error: `Only ${startingTeamName} has starting rights for this round` });
+  }
+
+  // Teammate slot is partner (requesterSlot + 2) % 4
+  const partnerSlot = (requesterSlot + 2) % 4;
+  const botPartner = room.players[partnerSlot];
+
+  if (!botPartner || botPartner.type !== 'bot') {
+    return res.status(400).json({ error: 'Your teammate is not a bot or the seat is empty' });
+  }
+
+  if (!botPartner.hand || botPartner.hand.length === 0) {
+    return res.status(400).json({ error: 'Bot partner has no dominoes in hand' });
+  }
+
+  const botDiff = botPartner.botDifficulty || room.defaultBotDifficulty || 'intermediate';
+  const openingMove = getBotOpeningDoubleMove(botPartner.hand, botDiff, partnerSlot, room);
+
+  if (!openingMove) {
+    return res.status(400).json({ error: 'Bot partner has no available moves' });
+  }
+
+  const playedTile = botPartner.hand[openingMove.tileIndex];
+  const isDouble = playedTile[0] === playedTile[1];
+  const teamLabel = room.startingTeam === 0 ? 'Team A' : 'Team B';
+
+  if (isDouble) {
+    room.logs.push(`🤖 Partner ${botPartner.name} takes the lead for ${teamLabel} and opens the round with DOUBLE [${playedTile[0]}|${playedTile[1]}]! 🀰`);
+  } else {
+    room.logs.push(`🤖 Partner ${botPartner.name} takes the lead for ${teamLabel} and opens the round with [${playedTile[0]}|${playedTile[1]}]!`);
+  }
+
+  // Set the starter slot and active turn to the bot partner, then execute the play
+  room.starterSlot = partnerSlot;
+  room.turn = partnerSlot;
+  executePlayTile(room, partnerSlot, openingMove.tileIndex, 'right');
+
+  // Schedule subsequent bot turns if needed
+  scheduleBotTurnIfNeeded(room);
+
+  room.lastUpdateTime = Date.now();
+  res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
+});
+
 // Pass Turn
 app.post('/api/rooms/:code/pass', (req, res) => {
   const code = sanitizeRoomCode(req.params.code);
@@ -1726,6 +2197,11 @@ app.post('/api/rooms/:code/react', (req, res) => {
   res.json({ room: sanitizeRoomForPlayer(room, getRequesterPlayerId(req)) });
 });
 
+// Fallback 404 handler for any unhandled /api/* routes to prevent serving HTML
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: `API endpoint ${req.method} ${req.path} not found` });
+});
+
 // Clean up stale rooms (older than 4 hours)
 setInterval(() => {
   const now = Date.now();
@@ -1736,15 +2212,45 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000);
 
-// Turn Timer Enforcer Loop (runs every 1 second)
+// Disconnect Detection & Auto-Hold Loop (runs every 2.5 seconds)
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of rooms.entries()) {
-    if (!room.turnTimer || room.turnTimer <= 0) continue;
+    let roomUpdated = false;
+    for (let i = 0; i < 4; i++) {
+      const p = room.players[i];
+      if (p && p.type === 'human' && p.lastSeen) {
+        // If human has not polled or sent heartbeat for > 10 seconds and not marked disconnected
+        if (now - p.lastSeen > 10000 && !p.isDisconnected) {
+          p.isDisconnected = true;
+          room.logs.push(`⚠️ ${p.name} (Seat ${i + 1}) connection lost. Holding seat for reconnect...`);
+          roomUpdated = true;
+        }
+      }
+    }
+    if (roomUpdated) {
+      room.lastUpdateTime = Date.now();
+    }
+  }
+}, 2500);
+
+// Turn Timer Enforcer & Disconnected Player Auto-Play Loop (runs every 1 second)
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, room] of rooms.entries()) {
     if (!room.turnStartedAt) continue;
 
     const elapsedSec = (now - room.turnStartedAt) / 1000;
-    if (elapsedSec < room.turnTimer) continue;
+    const timerLimit = room.turnTimer && room.turnTimer > 0 ? room.turnTimer : 0;
+    
+    // Check if active player is disconnected and needs auto-play (fallback 15s if timer is OFF)
+    const activeSlot = room.turn;
+    const activePlayer = room.players[activeSlot];
+    const isDisconnectedHuman = activePlayer && activePlayer.type === 'human' && activePlayer.isDisconnected;
+    
+    const isExpired = timerLimit > 0 ? (elapsedSec >= timerLimit) : (isDisconnectedHuman && elapsedSec >= 15);
+
+    if (!isExpired) continue;
 
     // Time expired!
     if (room.status === 'selecting_starter' && room.starterSelection && room.starterSelection.chosenIndex === null) {
@@ -1768,7 +2274,7 @@ setInterval(() => {
       const startingTeam = sum0 < sum1 ? 0 : 1;
       room.startingTeam = startingTeam;
 
-      room.logs.push(`⏰ Selection time limit expired (${room.turnTimer}s)! Tile 1 was automatically selected.`);
+      room.logs.push(`⏰ Selection time limit expired! Tile 1 was automatically selected.`);
       room.logs.push(`🎴 Team A gets [${room.starterSelection.team0Tile[0]}|${room.starterSelection.team0Tile[1]}] (Value: ${sum0}).`);
       room.logs.push(`🎴 Team B gets [${room.starterSelection.team1Tile[0]}|${room.starterSelection.team1Tile[1]}] (Value: ${sum1}).`);
       room.logs.push(`🎲 Team ${startingTeam === 0 ? 'A' : 'B'} starts the match!`);
@@ -1777,8 +2283,6 @@ setInterval(() => {
       room.turnStartedAt = Date.now();
       room.lastUpdateTime = Date.now();
     } else if (room.status === 'playing') {
-      const activeSlot = room.turn;
-      const activePlayer = room.players[activeSlot];
       if (!activePlayer) {
         advanceTurn(room);
         scheduleBotTurnIfNeeded(room);
@@ -1787,13 +2291,15 @@ setInterval(() => {
 
       const botDiff = activePlayer.botDifficulty || room.defaultBotDifficulty || 'intermediate';
       const botMove = getBotMove(activePlayer.hand, room.board, botDiff, activeSlot, room);
+      const reasonPrefix = isDisconnectedHuman ? `⚡ ${activePlayer.name} (Disconnected)` : `⏰ ${activePlayer.name}'s turn timer expired`;
+
       if (botMove) {
         const tile = activePlayer.hand[botMove.tileIndex];
-        room.logs.push(`⏰ ${activePlayer.name}'s turn timer expired (${room.turnTimer}s)! Auto-played tile [${tile[0]}|${tile[1]}].`);
+        room.logs.push(`${reasonPrefix}: Auto-played tile [${tile[0]}|${tile[1]}].`);
         executePlayTile(room, activeSlot, botMove.tileIndex, botMove.side);
       } else {
         room.consecutivePasses = (room.consecutivePasses || 0) + 1;
-        room.logs.push(`⏰ ${activePlayer.name}'s turn timer expired (${room.turnTimer}s)! Auto-passed turn.`);
+        room.logs.push(`${reasonPrefix}: Auto-passed turn.`);
 
         if (room.consecutivePasses >= 4) {
           handleTrancado(room);

@@ -98,6 +98,7 @@ export const translations = {
     hostBadge: "Lobby Host",
     kickSlot: "Kick Player",
     addBotBtn: "Add Bot",
+    addBotToSlot: "Add Bot Here",
     botSkillLevel: "Bot Skill Level",
     difficultyNovice: "Novice",
     difficultyIntermediate: "Intermediate",
@@ -107,6 +108,13 @@ export const translations = {
     joinAsSpectator: "Join as Spectator",
     spectatingBadge: "SPECTATING MATCH",
     takeSeatBtn: "Take Seat",
+    joinTeamA: "Join Team A",
+    joinTeamB: "Join Team B",
+    moveLeft: "Move Left",
+    moveRight: "Move Right",
+    chooseTeam: "Choose Team",
+    teamA: "Team A",
+    teamB: "Team B",
     leaveSpectatorBtn: "Stop Watching",
     spectatorCount: "Spectators",
     startGameBtn: "Start Match",
@@ -114,10 +122,28 @@ export const translations = {
     kickedNotice: "You have been removed from the table by the host.",
     onlyHostCanKick: "Only the lobby host can manage slots or kick players.",
     
+    // Disconnect & Reconnection
+    rejoinMatch: "Rejoin Active Match",
+    rejoiningMatch: "Reconnecting to Match...",
+    reconnectNotice: "Match in Progress Detected",
+    reconnectSub: "You have an active session in Room",
+    reclaimSeat: "Reclaim Seat",
+    reconnectBtn: "⚡ Rejoin Match",
+    dismissReconnect: "Dismiss",
+    playerOffline: "Offline",
+    playerOnline: "Online",
+    playerDisconnected: "Disconnected",
+    reconnectedBadge: "Reconnected",
+
     // Game Rules Modal
     rulesModalTitle: "Cuban Dominoes Rules (Doble Nueve)",
     gotIt: "Got It",
     
+    // Bot Partner Opening
+    letBotStartDouble: "Let Bot Partner Start (Double)",
+    letBotStartDoubleDesc: "Pass opening lead to your bot teammate to start the round with their highest double",
+    askingBotPartner: "Asking bot partner to open...",
+
     // Footer
     footerTag: "HAVANA SOCIAL CLUB • CUBAN DOMINOES DOBLE NUEVE SYSTEM"
   }
