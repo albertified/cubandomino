@@ -21,6 +21,7 @@ export const translations = {
     publicTables: "Public Tables",
     hostTable: "Host Table",
     joinCode: "Join Code",
+    trainSkills: "Train Skills",
     searchTable: "Search table or host...",
     refreshDir: "Refresh Directory",
     noTablesFound: "No Open Tables Found",

@@ -4,11 +4,13 @@ import {
   Trophy, Users, Play, Plus, LogOut, RefreshCw, 
   Bot, ShieldAlert, Sparkles, Send, Clock, HelpCircle, 
   ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info, Music,
-  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2, Maximize2, EyeOff, Zap
+  Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2, Maximize2, EyeOff, Zap,
+  GraduationCap
 } from 'lucide-react';
 import { Domino, GameRoom, GameStatus, Player, RoomListItem, BotDifficulty } from './types';
 import { DominoBoard } from './components/DominoBoard';
 import { DominoTile } from './components/DominoTile';
+import { DominoTrainingAcademy } from './components/DominoTrainingAcademy';
 import { ScoreHistoryChart } from './components/ScoreHistoryChart';
 import { CookieDisclosure } from './components/CookieDisclosure';
 import { RulesAndSeoSection } from './components/RulesAndSeoSection';
@@ -868,7 +870,8 @@ export default function App() {
   const [isPublic, setIsPublic] = useState<boolean>(true);
   const [publicRooms, setPublicRooms] = useState<RoomListItem[]>([]);
   const [loadingPublicRooms, setLoadingPublicRooms] = useState<boolean>(false);
-  const [lobbyTab, setLobbyTab] = useState<'public' | 'create' | 'join'>('public');
+  const [lobbyTab, setLobbyTab] = useState<'public' | 'create' | 'join' | 'training'>('public');
+  const [showInGameTraining, setShowInGameTraining] = useState<boolean>(false);
   const [searchFilter, setSearchFilter] = useState<string>('');
 
   // Gameplay specific UI states
@@ -2324,6 +2327,18 @@ export default function App() {
                 <span className="hidden sm:inline">{stealthActive ? "Stealth: ON" : "Stealth"}</span>
               </button>
               <button 
+                onClick={() => setLobbyTab('training')}
+                className={`border px-2.5 py-1 cursor-pointer transition-colors font-bold flex items-center gap-1.5 rounded-xs shadow-sm font-mono text-xs ${
+                  lobbyTab === 'training'
+                    ? 'border-[#006876] bg-[#006876] text-white shadow-sm'
+                    : 'border-[#006876]/80 hover:bg-[#006876]/30 bg-[#006876]/20 text-[#8debfd]'
+                }`}
+                title="Domino Skills Training Academy"
+              >
+                <GraduationCap className="w-3.5 h-3.5 text-[#8debfd]" />
+                <span className="hidden xs:inline">Academy</span>
+              </button>
+              <button 
                 onClick={() => { setRulesModalTab('features'); setShowRules(true); }}
                 className="border border-[#fe7328]/80 hover:bg-[#fe7328]/30 px-2.5 py-1 cursor-pointer transition-colors bg-[#fe7328]/20 text-[#fe7328] font-bold flex items-center gap-1.5 rounded-xs shadow-sm font-mono text-xs"
                 title="View All New Features"
@@ -2514,6 +2529,21 @@ export default function App() {
                   >
                     <Users className="w-4 h-4 text-[#8debfd]" />
                     <span>Join Code</span>
+                  </button>
+
+                  <button
+                    onClick={() => setLobbyTab('training')}
+                    className={`px-4 py-2.5 rounded-sm font-mono text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
+                      lobbyTab === 'training'
+                        ? 'bg-[#006876] text-white shadow-md ring-1 ring-[#8debfd]'
+                        : 'bg-[#200d07]/60 text-[#eee8da] hover:bg-[#200d07]/90 border border-[#83746f]/30'
+                    }`}
+                  >
+                    <GraduationCap className="w-4 h-4 text-[#fe7328]" />
+                    <span>Train Skills</span>
+                    <span className="px-1.5 py-0.5 bg-[#fe7328] text-[#32170d] text-[9px] font-black rounded-xs">
+                      NEW
+                    </span>
                   </button>
                 </div>
 
@@ -3030,6 +3060,22 @@ export default function App() {
                   </button>
                 </motion.div>
               )}
+
+              {/* TAB CONTENT: DOMINO SKILLS ACADEMY */}
+              {lobbyTab === 'training' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="w-full"
+                >
+                  <DominoTrainingAcademy
+                    onBack={() => setLobbyTab('public')}
+                    fichaTheme={fichaTheme}
+                    onPlayClack={() => audio.playClack()}
+                    onPlayWin={() => audio.playWin()}
+                  />
+                </motion.div>
+              )}
             </div>
           )}
 
@@ -3185,6 +3231,18 @@ export default function App() {
                 <Zap className="w-4 h-4 text-[#fe7328] shrink-0" />
                 <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#fe7328]">
                   NEW
+                </span>
+              </button>
+
+              {/* Domino Skills Training Academy Switch */}
+              <button 
+                onClick={() => setShowInGameTraining(true)}
+                className="w-11 h-11 rounded-md bg-[#200d07] border border-[#006876] text-[#8debfd] hover:bg-[#006876]/20 transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 shadow-md"
+                title="Domino Skills Training Academy"
+              >
+                <GraduationCap className="w-4 h-4 text-[#8debfd] shrink-0" />
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#8debfd]">
+                  TRAIN
                 </span>
               </button>
 
@@ -6348,6 +6406,33 @@ export default function App() {
               Alt+Shift+H
             </span>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* In-Game Domino Skills Training Academy Modal */}
+      <AnimatePresence>
+        {showInGameTraining && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-md p-2 sm:p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-5xl my-auto bg-[#1a0c07] border-2 border-[#83746f]/50 rounded-sm p-3 sm:p-5 shadow-2xl relative max-h-[95vh] overflow-y-auto"
+            >
+              <button
+                onClick={() => setShowInGameTraining(false)}
+                className="absolute top-4 right-4 text-[#d5c3bd] hover:text-white font-mono text-xs font-bold uppercase border border-[#83746f]/50 px-3 py-1.5 rounded-xs bg-[#200d07] hover:bg-[#3b1200] transition-colors cursor-pointer z-10"
+              >
+                Close ✕
+              </button>
+              <DominoTrainingAcademy
+                onBack={() => setShowInGameTraining(false)}
+                fichaTheme={fichaTheme}
+                onPlayClack={() => audio.playClack()}
+                onPlayWin={() => audio.playWin()}
+              />
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

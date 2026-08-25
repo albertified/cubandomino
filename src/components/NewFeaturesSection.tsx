@@ -9,7 +9,8 @@ import {
   Clock, 
   Sparkles,
   CheckCircle2,
-  Zap
+  Zap,
+  GraduationCap
 } from 'lucide-react';
 
 export interface FeatureItem {
@@ -26,10 +27,24 @@ export interface FeatureItem {
 
 export const NEW_FEATURES_LIST: FeatureItem[] = [
   {
+    id: 'skills-academy',
+    title: 'Domino Skills Training Academy',
+    badge: 'NEW • PRO MASTER STRATEGY TRAINER',
+    isFirst: true,
+    icon: <GraduationCap className="w-6 h-6 text-[#8debfd]" />,
+    description: 'Level up your domino skills with interactive tactical puzzles, scenario drills, and hand analyzers based on Cuban Doble Nueve master strategy.',
+    details: [
+      '6 strategic modules: Opening Leads (La Salida), Partner Protection (Respetar la Salida), Pass Tracking, Tempo & Squeezes (Apretar), Double-Block Monopolies (La Cuadra), and Precision Locks (La Traba)',
+      'Hand & Board AI Analyzer to test custom 10-tile hands against real-time Pro Master engine evaluations',
+      'Comprehensive glossary of Cuban non-verbal signaling and table conventions (A Quemarropa, La Pensada, La Suya)'
+    ],
+    highlightColor: 'from-[#006876]/30 to-[#006876]/10',
+    borderColor: 'border-[#006876]'
+  },
+  {
     id: 'domino-sorting',
     title: 'Domino Sorting',
     badge: 'FEATURE #1 • SMART HAND ORGANIZER',
-    isFirst: true,
     icon: <ArrowUpDown className="w-6 h-6 text-[#fe7328]" />,
     description: 'Effortlessly organize your hand with intuitive drag-and-drop tile positioning.',
     details: [

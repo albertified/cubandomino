@@ -1,6 +1,6 @@
 {
   "name": "Cuban Dominoes",
-  "description": "An online multiplayer Cuban-style double-nine dominoes game featuring team play, automatic pass detection, and real-time board layouts with snake turns and perpendicular double-piece alignments.",
+  "description": "An online multiplayer Cuban-style double-nine dominoes game featuring team play, automatic pass detection, real-time board layouts with snake turns, Pro Master bot strategy AI, and an interactive Domino Skills Training Academy with tactical puzzles and hand analyzers.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
