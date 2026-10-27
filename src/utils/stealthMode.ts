@@ -72,35 +72,42 @@ export const STEALTH_OPTIONS: StealthOption[] = [
  * Replaces favicon link elements in <head> to force browser icon update.
  */
 export function applyStealthDisguise(preset: StealthPreset) {
-  const option = STEALTH_OPTIONS.find((o) => o.id === preset) || STEALTH_OPTIONS[0];
+  try {
+    if (typeof document === 'undefined') return;
+    const option = STEALTH_OPTIONS.find((o) => o.id === preset) || STEALTH_OPTIONS[0];
 
-  // 1. Update Document Title
-  document.title = option.title;
+    // 1. Update Document Title
+    document.title = option.title;
 
-  // 2. Remove all existing favicon links to force browser update
-  const existingIcons = document.querySelectorAll<HTMLLinkElement>("link[rel*='icon']");
-  existingIcons.forEach((el) => el.parentNode?.removeChild(el));
+    // 2. Remove all existing favicon links to force browser update
+    const existingIcons = document.querySelectorAll<HTMLLinkElement>("link[rel*='icon']");
+    existingIcons.forEach((el) => el.parentNode?.removeChild(el));
 
-  // 3. Determine target favicon URL and MIME type
-  const targetFavicon = option.id === 'off' ? capturedOriginalFavicon : option.favicon;
-  const targetType = option.id === 'off' ? capturedOriginalType : (option.type || 'image/png');
+    // 3. Determine target favicon URL and MIME type
+    const targetFavicon = option.id === 'off' ? capturedOriginalFavicon : option.favicon;
+    const targetType = option.id === 'off' ? capturedOriginalType : (option.type || 'image/png');
 
-  // 4. Create fresh icon link elements
-  const newLink = document.createElement('link');
-  newLink.rel = 'icon';
-  if (targetType) {
-    newLink.type = targetType;
+    // 4. Create fresh icon link elements if head exists
+    if (document.head) {
+      const newLink = document.createElement('link');
+      newLink.rel = 'icon';
+      if (targetType) {
+        newLink.type = targetType;
+      }
+      newLink.href = targetFavicon;
+      document.head.appendChild(newLink);
+
+      const shortcutLink = document.createElement('link');
+      shortcutLink.rel = 'shortcut icon';
+      if (targetType) {
+        shortcutLink.type = targetType;
+      }
+      shortcutLink.href = targetFavicon;
+      document.head.appendChild(shortcutLink);
+    }
+  } catch (e) {
+    console.warn('[StealthMode] Disguise application skipped:', e);
   }
-  newLink.href = targetFavicon;
-  document.head.appendChild(newLink);
-
-  const shortcutLink = document.createElement('link');
-  shortcutLink.rel = 'shortcut icon';
-  if (targetType) {
-    shortcutLink.type = targetType;
-  }
-  shortcutLink.href = targetFavicon;
-  document.head.appendChild(shortcutLink);
 }
 
 /**

@@ -9,9 +9,10 @@ interface DominoTileProps {
   highlighted?: boolean;
   playable?: boolean;
   disableHover?: boolean;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onDoubleClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   orientation?: 'horizontal' | 'vertical';
   fichaTheme?: FichaThemeId;
   faceDown?: boolean;
@@ -52,7 +53,7 @@ const PipGrid: React.FC<{ value: number; sizeClass: string; pipColor?: string; i
   const activePips = (isVertical ? pipPositionsVertical[value] : pipPositionsHorizontal[value]) || [];
   
   return (
-    <div className={`grid grid-cols-3 grid-rows-3 gap-[1px] w-full h-full p-[3px] aspect-square relative`}>
+    <div className={`grid grid-cols-3 grid-rows-3 gap-[1px] w-full h-full p-[2px] sm:p-[3px] aspect-square relative`}>
       {Array.from({ length: 9 }).map((_, idx) => {
         const isActive = activePips.includes(idx);
         return (
@@ -60,6 +61,7 @@ const PipGrid: React.FC<{ value: number; sizeClass: string; pipColor?: string; i
             {isActive && (
               <div 
                 className={`rounded-full shadow-inner transition-all duration-300 ${
+                  sizeClass === 'xs' ? 'w-[2px] h-[2px]' :
                   sizeClass === 'sm' ? 'w-[3px] h-[3px]' : 
                   sizeClass === 'md' ? 'w-[5px] h-[5px]' : 'w-[7px] h-[7px]'
                 }`}
@@ -84,6 +86,7 @@ export const DominoTile: React.FC<DominoTileProps> = ({
   playable = false,
   disableHover = false,
   onClick,
+  onDoubleClick,
   className = '',
   size = 'md',
   orientation,
@@ -92,6 +95,14 @@ export const DominoTile: React.FC<DominoTileProps> = ({
 }) => {
   // Dimensions based on size
   const sizeClasses = {
+    xs: {
+      tile: 'w-[20px] h-[40px]',
+      tileDouble: 'w-[40px] h-[20px]',
+      border: 'rounded-[3px] border',
+      fontSize: 'text-[7px]',
+      spinner: 'w-[2.5px] h-[2.5px]',
+      pipSize: 'xs'
+    },
     sm: {
       tile: 'w-[24px] h-[48px]',
       tileDouble: 'w-[48px] h-[24px]',
@@ -118,7 +129,7 @@ export const DominoTile: React.FC<DominoTileProps> = ({
     }
   };
 
-  const config = sizeClasses[size];
+  const config = sizeClasses[size] || sizeClasses.md;
   const theme = FICHA_THEMES[fichaTheme] || FICHA_THEMES.havana;
 
   const isFaceDown = faceDown || (val1 === -1 && val2 === -1);
@@ -169,6 +180,7 @@ export const DominoTile: React.FC<DominoTileProps> = ({
       whileHover={playable && !disableHover ? { y: -4 } : {}}
       whileTap={playable ? { y: -1 } : {}}
       onClick={playable && onClick ? onClick : undefined}
+      onDoubleClick={playable && onDoubleClick ? onDoubleClick : undefined}
       className={`relative select-none flex ${isVertical ? 'flex-col' : 'flex-row'} items-center justify-between ${
         isVertical ? config.tile : config.tileDouble
       } ${config.border} ${currentBg} ${className}`}

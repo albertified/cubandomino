@@ -1506,6 +1506,21 @@ app.get('/api/rooms/:code', (req, res) => {
   res.json({ room: sanitizeRoomForPlayer(room, requesterId) });
 });
 
+function getNextBotName(room: GameRoom): string {
+  const existingNames = new Set(
+    room.players
+      .filter((p): p is Player => p !== null && p.type === 'bot')
+      .map(p => p.name)
+  );
+  for (let i = 1; i <= 4; i++) {
+    const candidate = `Bot ${i}`;
+    if (!existingNames.has(candidate)) {
+      return candidate;
+    }
+  }
+  return `Bot ${room.players.filter(p => p && p.type === 'bot').length + 1}`;
+}
+
 // Add Bot (places in specified slot or automatically in first vacant space)
 app.post('/api/rooms/:code/bot', (req, res) => {
   const code = sanitizeRoomCode(req.params.code);
@@ -1544,8 +1559,7 @@ app.post('/api/rooms/:code/bot', (req, res) => {
     ? requestedDiff
     : (room.defaultBotDifficulty || 'intermediate');
 
-  const botNames = ['Bot Pepe', 'Bot Maria', 'Bot Jose', 'Bot Caridad'];
-  const botName = botNames[targetSlot] || `Bot ${targetSlot + 1}`;
+  const botName = getNextBotName(room);
   const teamLabel = targetSlot % 2 === 0 ? 'Team A' : 'Team B';
 
   const botPlayer: Player = {
@@ -1912,20 +1926,20 @@ app.post('/api/rooms/:code/start', (req, res) => {
   }
 
   // Fill any empty slots with bots automatically
-  const botNames = ['Bot Pepe', 'Bot Maria', 'Bot Jose', 'Bot Caridad'];
   for (let i = 0; i < 4; i++) {
     if (!room.players[i]) {
       const difficulty = room.defaultBotDifficulty || 'intermediate';
+      const botName = getNextBotName(room);
       room.players[i] = {
         id: `bot_${i}`,
-        name: botNames[i],
+        name: botName,
         type: 'bot',
         slot: i,
         hand: [],
         botDifficulty: difficulty,
       };
       const diffLabel = difficulty === 'pro' ? 'Pro Master 🧠' : difficulty === 'novice' ? 'Novice 🎲' : 'Intermediate ⚡';
-      room.logs.push(`🤖 ${botNames[i]} (${diffLabel}) added to fill Slot ${i + 1}.`);
+      room.logs.push(`🤖 ${botName} (${diffLabel}) added to fill Slot ${i + 1}.`);
     }
   }
 
@@ -2511,10 +2525,25 @@ async function bootstrap() {
     if (process.env.NODE_ENV !== 'production') {
       const { createServer: createViteServer } = await import('vite');
       const vite = await createViteServer({
-        server: { middlewareMode: true },
+        server: {
+          middlewareMode: true,
+          hmr: false
+        },
         appType: 'spa'
       });
       app.use(vite.middlewares);
+      app.use('*', async (req, res, next) => {
+        const url = req.originalUrl;
+        if (url.startsWith('/api')) return next();
+        try {
+          const fs = await import('fs');
+          let template = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
+          template = await vite.transformIndexHtml(url, template);
+          res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+        } catch (e) {
+          next(e);
+        }
+      });
     } else {
       const distPath = path.join(process.cwd(), 'dist');
       app.use(express.static(distPath));

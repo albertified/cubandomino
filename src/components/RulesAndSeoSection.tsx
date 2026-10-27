@@ -214,7 +214,7 @@ export const RulesAndSeoSection: React.FC = () => {
               <li>Intelligent Bot AI fill-ins for instant solo or team practice.</li>
               <li>Realistic board layouts featuring dynamic snake curves and horizontal double-tile bend alignments.</li>
               <li>Customizable board themes (Classical Havana Wood, Malecon Emerald, Varadero Gold) and tile design sets.</li>
-              <li>High-fidelity Web Audio sound effects and authentic ambient Cuban music tracks.</li>
+              <li>High-fidelity Web Audio sound effects.</li>
             </ul>
           </div>
         </section>

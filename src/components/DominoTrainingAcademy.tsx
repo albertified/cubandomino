@@ -10,6 +10,7 @@ import {
 import { Domino } from '../types';
 import { FichaThemeId } from '../utils/themes';
 import { DominoTile } from './DominoTile';
+import { safeStorage } from '../utils/storage';
 
 export interface TrainingProgress {
   completedPuzzles: string[]; // puzzle IDs
@@ -541,11 +542,23 @@ export const DominoTrainingAcademy: React.FC<DominoTrainingAcademyProps> = ({
 
   // Persistent Progress
   const [progress, setProgress] = useState<TrainingProgress>(() => {
-    const saved = localStorage.getItem('cuban_dominoes_training_progress');
+    const saved = safeStorage.getItem('cuban_dominoes_training_progress');
     if (saved) {
       try {
-        return JSON.parse(saved);
-      } catch (e) {}
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            completedPuzzles: Array.isArray(parsed.completedPuzzles) ? parsed.completedPuzzles : [],
+            categoryScores: parsed.categoryScores && typeof parsed.categoryScores === 'object' ? parsed.categoryScores : {},
+            totalScore: typeof parsed.totalScore === 'number' ? parsed.totalScore : 0,
+            streak: typeof parsed.streak === 'number' ? parsed.streak : 0,
+            bestStreak: typeof parsed.bestStreak === 'number' ? parsed.bestStreak : 0,
+            lastTrainedAt: typeof parsed.lastTrainedAt === 'number' ? parsed.lastTrainedAt : Date.now()
+          };
+        }
+      } catch (e) {
+        console.warn('Failed parsing training progress', e);
+      }
     }
     return {
       completedPuzzles: [],
@@ -559,7 +572,7 @@ export const DominoTrainingAcademy: React.FC<DominoTrainingAcademyProps> = ({
 
   const saveProgress = (newProgress: TrainingProgress) => {
     setProgress(newProgress);
-    localStorage.setItem('cuban_dominoes_training_progress', JSON.stringify(newProgress));
+    safeStorage.setItem('cuban_dominoes_training_progress', JSON.stringify(newProgress));
   };
 
   const filteredPuzzles = useMemo(() => {
@@ -916,16 +929,16 @@ export const DominoTrainingAcademy: React.FC<DominoTrainingAcademyProps> = ({
                 )}
               </div>
 
-              <div className="bg-[#200d07] border-2 border-[#83746f]/50 rounded-sm py-3 px-2 min-h-[90px] flex items-center shadow-inner overflow-x-auto scrollbar-thin">
+              <div className="bg-[#200d07] border-2 border-[#83746f]/50 rounded-sm py-3 px-3 min-h-[96px] flex items-center shadow-inner overflow-x-auto scrollbar-thin">
                 {currentPuzzle.boardState.length === 0 ? (
                   <div className="w-full text-center font-serif italic text-[#d5c3bd]/70 text-sm py-4">
                     ✨ Table is currently empty. You are making the opening lead (La Salida)!
                   </div>
                 ) : (
-                  <div className="inline-flex min-w-full items-center justify-center gap-1 sm:gap-1.5 px-3 py-1">
+                  <div className="flex w-max min-w-full items-center justify-start sm:justify-center gap-1 sm:gap-1.5 px-3 py-1">
                     {currentPuzzle.boardState.map((tile, i) => {
                       const isDouble = tile[0] === tile[1];
-                      const boardTileSize = currentPuzzle.boardState.length > 4 ? 'sm' : 'md';
+                      const boardTileSize = currentPuzzle.boardState.length > 6 ? 'xs' : currentPuzzle.boardState.length > 3 ? 'sm' : 'md';
                       return (
                         <div key={i} className="flex items-center shrink-0">
                           <DominoTile

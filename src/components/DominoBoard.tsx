@@ -242,23 +242,12 @@ export const DominoBoard: React.FC<DominoBoardProps> = ({
         backgroundSize: '40px 40px'
       }} />
 
-      {/* Interaction Hint */}
-      <div className="absolute top-3 left-3 pointer-events-none opacity-70 text-[9px] sm:text-xs font-mono text-white/90 flex items-center gap-1.5 select-none z-10 bg-black/70 px-2.5 py-1 rounded-md border border-white/20 backdrop-blur-md shadow-md max-w-[90vw] overflow-x-auto whitespace-nowrap">
-        <span>👆 Drag to Pan</span>
-        <span>•</span>
-        <span>🤏 Pinch / Scroll to Zoom</span>
-        <span className="hidden sm:inline">• Double-tap Reset</span>
-      </div>
-
       {board.length === 0 ? (
-        <div className="flex flex-col items-center justify-center text-white/70 text-center p-6 space-y-3 z-10 select-none">
-          <div className="w-16 h-16 rounded-full border border-dashed border-white/30 flex items-center justify-center text-2xl font-bold font-sans shadow-lg">
+        <div className="flex flex-col items-center justify-center pointer-events-none opacity-20 select-none">
+          <div className="w-16 h-16 rounded-full border border-white/40 flex items-center justify-center text-2xl font-bold font-sans">
             9|9
           </div>
-          <div>
-            <p className="font-sans font-medium text-white/90 text-sm md:text-base">{activeBoardTheme.name}</p>
-            <p className="text-xs text-white/60 max-w-xs mt-1">Play the first tile of the round to begin the chain of play.</p>
-          </div>
+          <span className="text-[10px] font-mono tracking-widest uppercase mt-1.5 font-bold text-white/70">{activeBoardTheme.name}</span>
         </div>
       ) : (
         <div 

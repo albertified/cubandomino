@@ -1,16 +1,30 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      // Gracefully suppress harmless Vite HMR / WebSocket connection errors in iFrame preview
+      window.addEventListener('unhandledrejection', function(event) {
+        var str = String(event && event.reason ? (event.reason.stack || event.reason.message || event.reason) : '');
+        if (str.includes('WebSocket') || str.includes('@vite/client') || str.includes('ModuleRunnerTransport')) {
+          if (event.preventDefault) event.preventDefault();
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        }
+      });
+      window.addEventListener('error', function(event) {
+        var str = String(event ? (event.message || event.filename || '') : '');
+        if (str.includes('WebSocket') || str.includes('@vite/client') || str.includes('ModuleRunnerTransport')) {
+          if (event.preventDefault) event.preventDefault();
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        }
+      });
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/jpeg" href="/src/assets/images/domino_favicon_1785426592763.jpg" />
     <title>Cuban Domino Online</title>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2007499566170351"
-     crossorigin="anonymous"></script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

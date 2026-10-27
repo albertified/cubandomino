@@ -3,7 +3,7 @@ import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { 
   Trophy, Users, Play, Plus, LogOut, RefreshCw, 
   Bot, ShieldAlert, Sparkles, Send, Clock, HelpCircle, 
-  ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info, Music,
+  ArrowLeft, ArrowRight, Swords, Crown, Volume2, VolumeX, UserPlus, Info,
   Globe, Lock, Search, Eye, Settings, Check, SkipForward, TrendingUp, QrCode, Link2, Share2, Maximize2, EyeOff, Zap,
   GraduationCap
 } from 'lucide-react';
@@ -19,15 +19,23 @@ import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { TermsOfServicePage } from './components/TermsOfServicePage';
 import { ContactAboutPage } from './components/ContactAboutPage';
 import { InviteModal } from './components/InviteModal';
+import { MatchLobbyView } from './components/MatchLobbyView';
 import { translations, Language } from './translations';
 import { BoardThemeId, FichaThemeId, BOARD_THEMES, FICHA_THEMES, MATCHED_PRESETS } from './utils/themes';
 import { StealthPreset, STEALTH_OPTIONS, applyStealthDisguise, DEFAULT_STEALTH_HOTKEY } from './utils/stealthMode';
 
-// Browser Web Crypto random helpers for cryptographically secure randomness
+// Browser Web Crypto random helpers for cryptographically secure randomness with safe fallback
 function cryptoRandom(): number {
-  const array = new Uint32Array(1);
-  window.crypto.getRandomValues(array);
-  return array[0] / 0x100000000;
+  try {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      const array = new Uint32Array(1);
+      window.crypto.getRandomValues(array);
+      return array[0] / 0x100000000;
+    }
+  } catch {
+    // fallback
+  }
+  return Math.random();
 }
 
 function cryptoRandomInt(max: number): number {
@@ -36,50 +44,23 @@ function cryptoRandomInt(max: number): number {
 }
 
 function cryptoRandomId(prefix: string = 'p'): string {
-  const array = new Uint8Array(6);
-  window.crypto.getRandomValues(array);
-  const hex = Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
-  return `${prefix}_${hex}`;
+  try {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      const array = new Uint8Array(6);
+      window.crypto.getRandomValues(array);
+      const hex = Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+      return `${prefix}_${hex}`;
+    }
+  } catch {
+    // fallback
+  }
+  return `${prefix}_${Math.random().toString(36).substring(2, 10)}`;
 }
 
 // Browser-based Web Audio API synthesizer for high-fidelity offline sounds
 class DominoSynth {
   private ctx: AudioContext | null = null;
-  public musicEnabled: boolean = true;
   public sfxEnabled: boolean = true;
-  private musicInterval: any = null;
-  private musicPlaying: boolean = false;
-  private musicGainNode: GainNode | null = null;
-  private currentStep: number = 0;
-  public currentTrack: 'jazz' | 'fairy' | 'havana' = 'jazz';
-
-  // Jazz chord progression: Cmaj7 - Am7 - Dm7 - G7
-  private chords = [
-    [130.81, 164.81, 196.00, 246.94], // Cmaj7
-    [110.00, 130.81, 164.81, 196.00], // Am7
-    [146.83, 174.61, 220.00, 261.63], // Dm7
-    [98.00, 123.47, 146.83, 174.61]   // G7
-  ];
-
-  // Soft pentatonic scale for melody (C4, D4, E4, G4, A4, C5)
-  private melodyNotes = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25];
-
-  // Fairy Fountain cascading 16-note arpeggiator chords (Legend of Zelda)
-  // Progression in F: Fmaj9 - E7b9 - Am9 - D9 - G9 - Cmaj9
-  private fairyArpeggios = [
-    // 1. Fmaj9 arpeggio: F3, A3, C4, E4, G4, A4, C5, E5, G5, E5, C5, A4, G4, E4, C4, A3
-    [174.61, 220.00, 261.63, 329.63, 392.00, 440.00, 523.25, 659.25, 783.99, 659.25, 523.25, 440.00, 392.00, 329.63, 261.63, 220.00],
-    // 2. E7b9 arpeggio: E3, G#3, B3, D4, F4, G#4, B4, D5, F5, D5, B4, G#4, F4, D4, B3, G#3
-    [164.81, 207.65, 246.94, 293.66, 349.23, 415.30, 493.88, 587.33, 698.46, 587.33, 493.88, 415.30, 349.23, 293.66, 246.94, 207.65],
-    // 3. Am9 arpeggio: A3, C4, E4, G4, B4, C5, E5, G5, B5, G5, E5, C5, B4, G4, E4, C4
-    [220.00, 261.63, 329.63, 392.00, 493.88, 523.25, 659.25, 783.99, 987.77, 783.99, 659.25, 523.25, 493.88, 392.00, 329.63, 261.63],
-    // 4. D9 arpeggio: D3, F#3, A3, C4, E4, F#4, A4, C5, E5, C5, A4, F#4, E4, C4, A3, F#3
-    [146.83, 185.00, 220.00, 261.63, 329.63, 369.99, 440.00, 523.25, 659.25, 523.25, 440.00, 369.99, 329.63, 261.63, 220.00, 185.00],
-    // 5. G9 arpeggio: G3, B3, D4, F4, A4, B4, D5, F5, A5, F5, D5, B4, A4, F4, D4, B3
-    [196.00, 246.94, 293.66, 349.23, 440.00, 493.88, 587.33, 698.46, 880.00, 698.46, 587.33, 493.88, 440.00, 349.23, 293.66, 246.94],
-    // 6. Cmaj9 arpeggio: C4, E4, G4, B4, D5, E5, G5, B5, D6, B5, G5, E5, D5, B4, G4, E4
-    [261.63, 329.63, 392.00, 493.88, 587.33, 659.25, 783.99, 987.77, 1174.66, 987.77, 783.99, 659.25, 587.33, 493.88, 392.00, 329.63]
-  ];
 
   private initCtx() {
     if (!this.ctx) {
@@ -244,388 +225,6 @@ class DominoSynth {
     }
   }
 
-  setTrack(track: 'jazz' | 'fairy' | 'havana') {
-    if (this.currentTrack === track) return;
-    this.currentTrack = track;
-    if (this.musicPlaying) {
-      this.stopMusic();
-      this.startMusic();
-    }
-  }
-
-  startMusic() {
-    if (this.musicPlaying) return;
-    try {
-      this.initCtx();
-      const ctx = this.ctx!;
-      
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-
-      this.musicGainNode = ctx.createGain();
-      // Set volume to be extremely soft and ambient (0.015 is ideal)
-      this.musicGainNode.gain.setValueAtTime(this.musicEnabled ? 0.015 : 0, ctx.currentTime);
-      this.musicGainNode.connect(ctx.destination);
-      
-      this.musicPlaying = true;
-      this.currentStep = 0;
-      
-      const stepDuration = this.currentTrack === 'havana' ? 0.35 : (this.currentTrack === 'fairy' ? 1.0 : 0.8); // 170 BPM for Salsa eighths, 60 BPM for fairy fountain, 75 BPM for jazz
-      
-      const playStep = () => {
-        if (!this.musicPlaying) return;
-        if (!this.musicEnabled || !this.musicGainNode) return;
-        
-        const now = ctx.currentTime;
-
-        if (this.currentTrack === 'fairy') {
-          const noteSpacing = stepDuration / 4;
-          const barIdx = Math.floor(this.currentStep / 4) % this.fairyArpeggios.length;
-          const currentArp = this.fairyArpeggios[barIdx];
-          const beatInBar = this.currentStep % 4;
-
-          // 1. Play 4 cascading notes of the arpeggio for this beat step
-          for (let i = 0; i < 4; i++) {
-            const noteIdx = beatInBar * 4 + i;
-            const freq = currentArp[noteIdx];
-            const noteTime = now + i * noteSpacing;
-
-            const osc = ctx.createOscillator();
-            const gainNode = ctx.createGain();
-            const filter = ctx.createBiquadFilter();
-
-            osc.connect(filter);
-            filter.connect(gainNode);
-            gainNode.connect(this.musicGainNode!);
-
-            osc.type = 'sine'; // glassy harp/piano tone
-            osc.frequency.setValueAtTime(freq, noteTime);
-
-            filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(1000, noteTime); // soft cutoff
-
-            gainNode.gain.setValueAtTime(0, noteTime);
-            gainNode.gain.linearRampToValueAtTime(0.045, noteTime + 0.08); // soft attack prevents click
-            gainNode.gain.linearRampToValueAtTime(0, noteTime + stepDuration * 1.5); // long sustain decay
-
-            osc.start(noteTime);
-            osc.stop(noteTime + stepDuration * 1.6);
-          }
-
-          // 2. Deep warm ground bass on beat 0 of the bar
-          if (beatInBar === 0) {
-            const bassFreqs = [87.31, 82.41, 110.00, 73.42, 98.00, 130.81]; // F2, E2, A2, D2, G2, C2
-            const bassFreq = bassFreqs[barIdx];
-
-            const osc = ctx.createOscillator();
-            const gainNode = ctx.createGain();
-            const filter = ctx.createBiquadFilter();
-
-            osc.connect(filter);
-            filter.connect(gainNode);
-            gainNode.connect(this.musicGainNode!);
-
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(bassFreq, now);
-
-            filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(180, now);
-
-            gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(0.07, now + 0.2); // soft swell
-            gainNode.gain.linearRampToValueAtTime(0, now + stepDuration * 3.5); // long ring
-
-            osc.start(now);
-            osc.stop(now + stepDuration * 3.6);
-          }
-
-          // 3. Delicate magical sparkle chime occasionally on offbeats
-          if (beatInBar === 2 && cryptoRandom() > 0.4) {
-            const chimes = [1046.50, 1174.66, 1318.51, 1567.98, 1760.00]; // C6, D6, E6, G6, A6
-            const chimeFreq = chimes[cryptoRandomInt(chimes.length)];
-
-            const osc = ctx.createOscillator();
-            const gainNode = ctx.createGain();
-
-            osc.connect(gainNode);
-            gainNode.connect(this.musicGainNode!);
-
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(chimeFreq, now);
-
-            gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(0.015, now + 0.1); // subtle chime dust
-            gainNode.gain.linearRampToValueAtTime(0, now + stepDuration * 1.5);
-
-            osc.start(now);
-            osc.stop(now + stepDuration * 1.6);
-          }
-        } else if (this.currentTrack === 'havana') {
-          // Play Havana Salsa / Montuno track (Am - G - F - E7 progression)
-          const havanaChords = [
-            [220.00, 261.63, 329.63, 440.00], // Am (A3, C4, E4, A4)
-            [196.00, 246.94, 293.66, 392.00], // G (G3, B3, D4, G4)
-            [174.61, 220.00, 261.63, 349.23], // F (F3, A3, C4, F4)
-            [164.81, 207.65, 246.94, 329.63]  // E7 (E3, G#3, B3, E4)
-          ];
-          const chordIdx = Math.floor(this.currentStep / 8) % havanaChords.length;
-          const chord = havanaChords[chordIdx];
-          const stepInBar = this.currentStep % 8;
-
-          // 1. Syncopated Salsa Piano Montuno (Guajeo)
-          // Classic offbeat syncopations on eighth notes
-          if (stepInBar === 1 || stepInBar === 3 || stepInBar === 4 || stepInBar === 6 || stepInBar === 7) {
-            chord.forEach((freq, noteIdx) => {
-              const noteTime = now + noteIdx * 0.012; // slight human strum arpeggiation
-              const osc = ctx.createOscillator();
-              const gainNode = ctx.createGain();
-              const filter = ctx.createBiquadFilter();
-
-              osc.connect(filter);
-              filter.connect(gainNode);
-              gainNode.connect(this.musicGainNode!);
-
-              osc.type = 'triangle'; // Gives a punchy retro tone-wheel style piano sound
-              osc.frequency.setValueAtTime(freq, noteTime);
-
-              filter.type = 'lowpass';
-              filter.frequency.setValueAtTime(1500, noteTime);
-
-              gainNode.gain.setValueAtTime(0, noteTime);
-              gainNode.gain.linearRampToValueAtTime(0.045, noteTime + 0.02); // quick crisp attack
-              gainNode.gain.exponentialRampToValueAtTime(0.001, noteTime + 0.28); // piano decay
-
-              osc.start(noteTime);
-              osc.stop(noteTime + 0.32);
-            });
-          }
-
-          // 2. Salsa Bass Tumbao Rhythm (plays root/fifth with anticipation on step 7)
-          const currentRoot = chord[0] / 2;
-          const currentFifth = chord[2] / 2;
-          const nextChordIdx = Math.floor((this.currentStep + 8) / 8) % havanaChords.length;
-          const nextRoot = havanaChords[nextChordIdx][0] / 2;
-
-          let bassFreq = null;
-          if (stepInBar === 2) {
-            bassFreq = currentRoot;
-          } else if (stepInBar === 5) {
-            bassFreq = currentFifth;
-          } else if (stepInBar === 7) {
-            bassFreq = nextRoot; // Anticipate the root of next chord!
-          }
-
-          if (bassFreq) {
-            const osc = ctx.createOscillator();
-            const gainNode = ctx.createGain();
-            const filter = ctx.createBiquadFilter();
-
-            osc.connect(filter);
-            filter.connect(gainNode);
-            gainNode.connect(this.musicGainNode!);
-
-            osc.type = 'triangle'; // rich thick acoustic bass
-            osc.frequency.setValueAtTime(bassFreq, now);
-
-            filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(130, now); // filtering highs for deep bass rumble
-
-            gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(0.12, now + 0.04); // solid attack
-            gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.5); // long ring
-
-            osc.start(now);
-            osc.stop(now + 0.55);
-          }
-
-          // 3. Cuban Campana Cowbell (metallic square waves with bandpass)
-          if (stepInBar % 2 === 0) {
-            const isOpen = (stepInBar === 0 || stepInBar === 4);
-            const freq1 = isOpen ? 540 : 600;
-            const freq2 = isOpen ? 800 : 900;
-            const gainVal = isOpen ? 0.012 : 0.008;
-
-            [freq1, freq2].forEach(freq => {
-              const osc = ctx.createOscillator();
-              const gainNode = ctx.createGain();
-              const filter = ctx.createBiquadFilter();
-
-              osc.connect(filter);
-              filter.connect(gainNode);
-              gainNode.connect(this.musicGainNode!);
-
-              osc.type = 'square';
-              osc.frequency.setValueAtTime(freq, now);
-
-              filter.type = 'bandpass';
-              filter.frequency.setValueAtTime(1000, now);
-              filter.Q.setValueAtTime(3, now);
-
-              gainNode.gain.setValueAtTime(0, now);
-              gainNode.gain.linearRampToValueAtTime(gainVal, now + 0.005);
-              gainNode.gain.exponentialRampToValueAtTime(0.001, now + (isOpen ? 0.12 : 0.07));
-
-              osc.start(now);
-              osc.stop(now + 0.15);
-            });
-          }
-
-          // 4. Elegant Charanga Flute Melodies
-          if ((stepInBar === 3 || stepInBar === 5) && cryptoRandom() > 0.65) {
-            const fluteScale = [440.00, 523.25, 587.33, 659.25, 783.99, 880.00, 1046.50];
-            const freq = fluteScale[cryptoRandomInt(fluteScale.length)];
-
-            const osc = ctx.createOscillator();
-            const gainNode = ctx.createGain();
-            const filter = ctx.createBiquadFilter();
-
-            osc.connect(filter);
-            filter.connect(gainNode);
-            gainNode.connect(this.musicGainNode!);
-
-            osc.type = 'triangle'; // sweet airy woodwind tone
-            osc.frequency.setValueAtTime(freq, now);
-            // Elegant vibrato modulation
-            osc.frequency.linearRampToValueAtTime(freq * 1.015, now + 0.15);
-            osc.frequency.linearRampToValueAtTime(freq * 0.985, now + 0.25);
-            osc.frequency.linearRampToValueAtTime(freq, now + 0.35);
-
-            filter.type = 'bandpass';
-            filter.frequency.setValueAtTime(freq * 1.4, now);
-            filter.Q.setValueAtTime(2, now);
-
-            gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(0.025, now + 0.04);
-            gainNode.gain.linearRampToValueAtTime(0.015, now + 0.15);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-
-            osc.start(now);
-            osc.stop(now + 0.45);
-          }
-        } else {
-          // Play current Jazz track
-          const chordIdx = Math.floor(this.currentStep / 4) % this.chords.length;
-          const chord = this.chords[chordIdx];
-          const beatInBar = this.currentStep % 4;
-          
-          // 1. Warm electric piano style chord on first beat of bar
-          if (beatInBar === 0) {
-            chord.forEach(freq => {
-              const osc = ctx.createOscillator();
-              const gainNode = ctx.createGain();
-              osc.connect(gainNode);
-              gainNode.connect(this.musicGainNode!);
-              
-              osc.type = 'sine'; // very pure warm tone
-              osc.frequency.setValueAtTime(freq, now);
-              
-              gainNode.gain.setValueAtTime(0, now);
-              gainNode.gain.linearRampToValueAtTime(0.08, now + 0.2); // soft attack prevents clicking
-              gainNode.gain.linearRampToValueAtTime(0, now + stepDuration * 3.5); // decay to EXACTLY zero
-              
-              osc.start(now);
-              osc.stop(now + stepDuration * 3.6); // stop AFTER gain is zero
-            });
-          } else if (beatInBar === 2 && cryptoRandom() > 0.4) {
-            // Off-beat quiet chord strum
-            chord.forEach(freq => {
-              const osc = ctx.createOscillator();
-              const gainNode = ctx.createGain();
-              osc.connect(gainNode);
-              gainNode.connect(this.musicGainNode!);
-              
-              osc.type = 'sine';
-              osc.frequency.setValueAtTime(freq * 1.5, now);
-              
-              gainNode.gain.setValueAtTime(0, now);
-              gainNode.gain.linearRampToValueAtTime(0.04, now + 0.1); // soft attack
-              gainNode.gain.linearRampToValueAtTime(0, now + stepDuration * 1.5); // decay to EXACTLY zero
-              
-              osc.start(now);
-              osc.stop(now + stepDuration * 1.6); // stop AFTER gain is zero
-            });
-          }
-          
-          // 2. Slow soothing bossa bassline
-          const bassNotes = [chord[0] / 2, chord[2] / 2];
-          const bassFreq = beatInBar === 0 || beatInBar === 2 ? bassNotes[0] : (beatInBar === 3 ? bassNotes[1] : null);
-          if (bassFreq) {
-            const osc = ctx.createOscillator();
-            const gainNode = ctx.createGain();
-            osc.connect(gainNode);
-            gainNode.connect(this.musicGainNode!);
-            
-            osc.type = 'triangle'; // round warm bass
-            osc.frequency.setValueAtTime(bassFreq, now);
-            
-            gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(0.12, now + 0.08); // soft attack
-            gainNode.gain.linearRampToValueAtTime(0, now + stepDuration * 0.7); // decay to EXACTLY zero
-            
-            osc.start(now);
-            osc.stop(now + stepDuration * 0.8); // stop AFTER gain is zero
-          }
-          
-          // 3. Casual, soft lounge melody note occasionally
-          if (cryptoRandom() > 0.4) {
-            const noteFreq = this.melodyNotes[cryptoRandomInt(this.melodyNotes.length)];
-            const osc = ctx.createOscillator();
-            const gainNode = ctx.createGain();
-            const filter = ctx.createBiquadFilter();
-            
-            osc.connect(filter);
-            filter.connect(gainNode);
-            gainNode.connect(this.musicGainNode!);
-            
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(noteFreq, now);
-            
-            filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(800, now); // low cutoff to filter high frequencies
-            
-            gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(0.05, now + 0.15); // soft attack
-            gainNode.gain.linearRampToValueAtTime(0, now + stepDuration * 1.7); // decay to EXACTLY zero
-            
-            osc.start(now);
-            osc.stop(now + stepDuration * 1.8); // stop AFTER gain is zero
-          }
-        }
-        
-        this.currentStep++;
-      };
-      
-      playStep();
-      this.musicInterval = setInterval(playStep, stepDuration * 1000);
-    } catch (e) {
-      console.warn("Failed to start background elevator music loop", e);
-    }
-  }
-
-  stopMusic() {
-    this.musicPlaying = false;
-    if (this.musicInterval) {
-      clearInterval(this.musicInterval);
-      this.musicInterval = null;
-    }
-    if (this.musicGainNode) {
-      try {
-        this.musicGainNode.disconnect();
-      } catch (e) {}
-      this.musicGainNode = null;
-    }
-  }
-
-  updateMusicVolume(enabled: boolean) {
-    this.musicEnabled = enabled;
-    if (this.musicGainNode) {
-      try {
-        this.musicGainNode.gain.setValueAtTime(enabled ? 0.015 : 0, this.ctx ? this.ctx.currentTime : 0);
-      } catch (e) {}
-    }
-  }
-
   updateSfxVolume(enabled: boolean) {
     this.sfxEnabled = enabled;
   }
@@ -673,14 +272,8 @@ export default function App() {
     setInviteInitialBigMode(bigMode);
     setShowInviteModal(true);
   };
-  const [musicEnabled, setMusicEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('cuban_dominoes_music_enabled') !== 'false';
-  });
   const [sfxEnabled, setSfxEnabled] = useState<boolean>(() => {
     return localStorage.getItem('cuban_dominoes_sfx_enabled') !== 'false';
-  });
-  const [currentTrack, setCurrentTrack] = useState<'jazz' | 'fairy' | 'havana'>(() => {
-    return (localStorage.getItem('cuban_dominoes_track') as 'jazz' | 'fairy' | 'havana') || 'jazz';
   });
   const [reactionCooldown, setReactionCooldown] = useState<number>(0);
   const [botStartingLoading, setBotStartingLoading] = useState<boolean>(false);
@@ -714,7 +307,7 @@ export default function App() {
   const lastDragEndTimeRef = useRef<number>(0);
   const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const handContainerRef = useRef<HTMLDivElement>(null);
-  const reorderGroupRef = useRef<HTMLDivElement>(null);
+  const reorderGroupRef = useRef<any>(null);
 
   const [nowMs, setNowMs] = useState<number>(Date.now());
   useEffect(() => {
@@ -743,7 +336,6 @@ export default function App() {
   const [settingsName, setSettingsName] = useState<string>('');
   const [settingsBoardTheme, setSettingsBoardTheme] = useState<BoardThemeId>('havana');
   const [settingsFichaTheme, setSettingsFichaTheme] = useState<FichaThemeId>('havana');
-  const [settingsMusicEnabled, setSettingsMusicEnabled] = useState<boolean>(true);
   const [settingsSfxEnabled, setSettingsSfxEnabled] = useState<boolean>(true);
   const [settingsSavedToast, setSettingsSavedToast] = useState<boolean>(false);
 
@@ -798,7 +390,6 @@ export default function App() {
     setSettingsFichaTheme(fichaTheme);
     setSettingsDragAndDrop(dragAndDropEnabled);
     setSettingsHandScale(handTileScale);
-    setSettingsMusicEnabled(musicEnabled);
     setSettingsSfxEnabled(sfxEnabled);
     setSettingsStealthPreset(stealthPreset);
     setSettingsStealthActive(stealthActive);
@@ -821,9 +412,6 @@ export default function App() {
 
     setFichaTheme(settingsFichaTheme);
     localStorage.setItem('cuban_dominoes_ficha_theme', settingsFichaTheme);
-
-    setMusicEnabled(settingsMusicEnabled);
-    localStorage.setItem('cuban_dominoes_music_enabled', String(settingsMusicEnabled));
 
     setSfxEnabled(settingsSfxEnabled);
     localStorage.setItem('cuban_dominoes_sfx_enabled', String(settingsSfxEnabled));
@@ -986,26 +574,6 @@ export default function App() {
     }
   }, [reactionCooldown]);
 
-  // Sync track selection
-  useEffect(() => {
-    audio.setTrack(currentTrack);
-    localStorage.setItem('cuban_dominoes_track', currentTrack);
-  }, [currentTrack]);
-
-  // Sync music settings & start/stop background music loop on musicEnabled toggle
-  useEffect(() => {
-    audio.updateMusicVolume(musicEnabled);
-    localStorage.setItem('cuban_dominoes_music_enabled', String(musicEnabled));
-    if (musicEnabled) {
-      audio.startMusic();
-    } else {
-      audio.stopMusic();
-    }
-    return () => {
-      audio.stopMusic();
-    };
-  }, [musicEnabled, currentTrack]);
-
   // Sync SFX settings
   useEffect(() => {
     audio.updateSfxVolume(sfxEnabled);
@@ -1060,20 +628,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [stealthPreset]);
 
-  // Gracefully handle browser auto-play policies by triggering on first interaction
-  useEffect(() => {
-    const resumeAudio = () => {
-      if (musicEnabled) {
-        audio.startMusic();
-      }
-    };
-    window.addEventListener('click', resumeAudio, { once: true });
-    window.addEventListener('touchstart', resumeAudio, { once: true });
-    return () => {
-      window.removeEventListener('click', resumeAudio);
-      window.removeEventListener('touchstart', resumeAudio);
-    };
-  }, [musicEnabled]);
+
 
   // Sync player name changes to localStorage
   const handleSaveName = (name: string) => {
@@ -2277,31 +1832,6 @@ export default function App() {
               </p>
             </div>
             <div className="audio-ctrl flex flex-wrap gap-2.5 sm:gap-3 items-center text-right font-mono text-[10px] uppercase shrink-0">
-              <div className="hidden sm:block">
-                <span className="block text-[8px] opacity-60 mb-0.5 text-[#d5c3bd]">{t.track}</span>
-                <span className="text-[#8debfd] font-bold">
-                  {currentTrack === 'jazz' ? t.jazzLounge : (currentTrack === 'fairy' ? t.fairyFountain : t.havanaMontuno)}
-                </span>
-              </div>
-              <button 
-                onClick={() => setCurrentTrack(currentTrack === 'jazz' ? 'fairy' : (currentTrack === 'fairy' ? 'havana' : 'jazz'))}
-                className="border border-[#83746f]/40 hover:border-[#8debfd] hover:text-[#8debfd] px-2.5 py-1 cursor-pointer transition-colors bg-[#200d07]/60 text-[#eee8da] rounded-xs"
-                title="Switch Ambient Track"
-              >
-                {t.switch}
-              </button>
-              <button 
-                onClick={() => setMusicEnabled(!musicEnabled)}
-                className={`border px-2.5 py-1 cursor-pointer transition-colors rounded-xs flex items-center gap-1 ${
-                  musicEnabled 
-                    ? 'border-[#006876] bg-[#006876]/40 text-[#8debfd]' 
-                    : 'border-[#83746f]/40 bg-[#200d07]/60 text-[#83746f] hover:text-[#eee8da]'
-                }`}
-                title={musicEnabled ? "Mute Background Music" : "Unmute Background Music"}
-              >
-                <Music className="w-3 h-3" />
-                <span>{musicEnabled ? "Music: ON" : "Music: OFF"}</span>
-              </button>
               <button 
                 onClick={() => setSfxEnabled(!sfxEnabled)}
                 className={`border px-2.5 py-1 cursor-pointer transition-colors rounded-xs flex items-center gap-1 ${
@@ -3145,135 +2675,51 @@ export default function App() {
               <span className="text-[10px] font-mono font-bold tracking-widest text-[#fe7328]">CLUB</span>
             </div>
 
-            <div className="flex flex-col gap-3.5">
-              {/* Track Toggle */}
-              <button 
-                onClick={() => setCurrentTrack(currentTrack === 'jazz' ? 'fairy' : (currentTrack === 'fairy' ? 'havana' : 'jazz'))}
-                className={`w-11 h-11 rounded-md border transition-all cursor-pointer bg-[#200d07] flex flex-col items-center justify-center text-center shrink-0 ${
-                  musicEnabled 
-                    ? 'border-[#006876] text-[#8debfd] shadow-md' 
-                    : 'border-[#83746f]/30 text-[#83746f] opacity-50 hover:opacity-100'
-                }`}
-                title={`Track: ${currentTrack === 'jazz' ? 'Jazz Lounge' : (currentTrack === 'fairy' ? 'Fairy Fountain' : 'Havana Montuno')} (Click to switch)`}
-              >
-                <Music className="w-4 h-4 shrink-0" />
-                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#eee8da]">
-                  {currentTrack === 'jazz' ? 'JAZZ' : (currentTrack === 'fairy' ? 'ZELDA' : 'HAVANA')}
-                </span>
-              </button>
-
-              {/* Music Switch */}
-              <button 
-                onClick={() => setMusicEnabled(!musicEnabled)}
-                className={`w-11 h-11 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 ${
-                  musicEnabled 
-                    ? 'bg-[#200d07] border-[#006876] text-[#8debfd] shadow-sm' 
-                    : 'bg-transparent border-[#83746f]/30 text-[#83746f] hover:text-[#eee8da]'
-                }`}
-                title={musicEnabled ? "Mute Background Music" : "Unmute Background Music"}
-              >
-                <Music className="w-4 h-4 shrink-0" />
-                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
-                  {musicEnabled ? 'MUS ON' : 'MUS OFF'}
-                </span>
-              </button>
-
+            <div className="flex flex-col gap-2.5">
               {/* SFX Switch */}
               <button 
                 onClick={() => setSfxEnabled(!sfxEnabled)}
-                className={`w-11 h-11 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 ${
+                className={`w-10 h-10 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 ${
                   sfxEnabled 
                     ? 'bg-[#200d07] border-[#006876] text-[#8debfd] shadow-sm' 
-                    : 'bg-transparent border-[#83746f]/30 text-[#83746f] hover:text-[#eee8da]'
+                    : 'bg-transparent border-white/10 text-white/40 hover:text-white/80'
                 }`}
-                title={sfxEnabled ? "Mute Sound Effects" : "Unmute Sound Effects"}
+                title={sfxEnabled ? 'Mute Sound Effects' : 'Enable Sound Effects'}
               >
                 {sfxEnabled ? <Volume2 className="w-4 h-4 shrink-0" /> : <VolumeX className="w-4 h-4 shrink-0" />}
                 <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
-                  {sfxEnabled ? 'SFX ON' : 'SFX OFF'}
+                  {sfxEnabled ? 'SFX' : 'MUTED'}
                 </span>
               </button>
 
-              {/* Stealth Mode Switch */}
-              <button
-                onClick={toggleStealthModeDirect}
-                className={`w-11 h-11 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 ${
-                  stealthActive
-                    ? 'bg-[#006876] border-[#8debfd] text-white shadow-sm font-bold'
-                    : 'bg-[#200d07] border-[#83746f]/30 text-[#83746f] hover:text-[#eee8da]'
-                }`}
-                title={stealthActive ? "Disable Stealth Mode (Alt+Shift+H)" : "Enable Stealth Mode / Tab Disguise (Alt+Shift+H)"}
-              >
-                <EyeOff className="w-4 h-4 text-[#8debfd] shrink-0" />
-                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
-                  {stealthActive ? 'STEALTH' : 'STEALTH'}
-                </span>
-              </button>
-
-              {/* Settings Switch */}
-              <button 
-                onClick={openSettingsModal}
-                className="w-11 h-11 rounded-md bg-[#200d07] border border-[#006876] text-[#8debfd] hover:bg-[#006876]/20 transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
-                title={t.settingsTooltip}
-              >
-                <Settings className="w-4 h-4 text-[#8debfd] shrink-0" />
-                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
-                  OPTION
-                </span>
-              </button>
-
-              {/* New Features Switch */}
-              <button 
-                onClick={() => { setRulesModalTab('features'); setShowRules(true); }}
-                className="w-11 h-11 rounded-md bg-[#200d07] border border-[#fe7328] text-[#fe7328] hover:bg-[#fe7328]/20 transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 shadow-md"
-                title="View All New Features"
-              >
-                <Zap className="w-4 h-4 text-[#fe7328] shrink-0" />
-                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#fe7328]">
-                  NEW
-                </span>
-              </button>
-
-              {/* Domino Skills Training Academy Switch */}
-              <button 
-                onClick={() => setShowInGameTraining(true)}
-                className="w-11 h-11 rounded-md bg-[#200d07] border border-[#006876] text-[#8debfd] hover:bg-[#006876]/20 transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0 shadow-md"
-                title="Domino Skills Training Academy"
-              >
-                <GraduationCap className="w-4 h-4 text-[#8debfd] shrink-0" />
-                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#8debfd]">
-                  TRAIN
-                </span>
-              </button>
-
-              {/* Rules Switch */}
+              {/* Rules & Guide */}
               <button 
                 onClick={() => { setRulesModalTab('rules'); setShowRules(true); }}
-                className="w-11 h-11 rounded-md bg-[#200d07] border border-[#83746f]/30 text-[#eee8da] hover:border-[#fe7328] transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
+                className="w-10 h-10 rounded-lg bg-transparent border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
                 title={t.rulesTooltip}
               >
-                <HelpCircle className="w-4 h-4 text-[#eee8da] shrink-0" />
-                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none text-[#eee8da]">
+                <HelpCircle className="w-4 h-4 shrink-0" />
+                <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
                   RULES
                 </span>
               </button>
 
-              {/* Invite Link & QR Switch */}
+              {/* Settings */}
               <button 
-                onClick={() => setShowInviteModal(true)}
-                className="w-11 h-11 rounded-md bg-[#200d07] border border-[#fe7328]/60 text-[#fe7328] hover:bg-[#fe7328]/20 transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
-                title="Invite Players via Link / QR Code"
+                onClick={openSettingsModal}
+                className="w-10 h-10 rounded-lg bg-transparent border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
+                title={t.settingsTooltip}
               >
-                <QrCode className="w-4 h-4 text-[#fe7328] shrink-0" />
+                <Settings className="w-4 h-4 shrink-0" />
                 <span className="text-[7px] font-mono uppercase mt-0.5 font-bold leading-none">
-                  INVITE
+                  SETTINGS
                 </span>
               </button>
             </div>
 
             <button
               onClick={exitRoom}
-              className="mt-auto w-11 h-11 rounded-md bg-[#3b1200] hover:bg-[#521b02] border border-[#fe7328]/40 text-[#fe7328] hover:text-[#fff9eb] transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
+              className="mt-auto w-10 h-10 rounded-lg bg-[#3b1200] hover:bg-[#521b02] border border-[#fe7328]/40 text-[#fe7328] hover:text-[#fff9eb] transition-all cursor-pointer flex flex-col items-center justify-center text-center shrink-0"
               title={t.leaveMatchTooltip}
             >
               <LogOut className="w-4 h-4 shrink-0" />
@@ -3330,32 +2776,42 @@ export default function App() {
                     })()}
                   </>
                 ) : room.status === 'waiting' ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#200d07] border border-[#83746f]/40 rounded-sm text-xs text-[#eee8da] font-mono font-bold">
-                    {t.lobbyStage}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-stone-400 bg-stone-900/80 border border-stone-800 px-3 py-1.5 rounded-lg">
+                      <span className="text-[#fbbf24] font-bold">{room.targetScore} PTS</span>
+                      <span className="text-stone-600">•</span>
+                      <span>{room.turnTimer ? `${room.turnTimer}s Timer` : 'No Timer'}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-900/90 border border-stone-800 rounded-lg text-xs font-mono">
+                      <span className="text-stone-500">ROOM:</span>
+                      <span className="font-bold text-[#fe7328] tracking-wider">{room.roomCode}</span>
+                    </div>
+
+                    <button
+                      onClick={() => openInviteModal(false)}
+                      className="px-3 py-1.5 bg-[#fe7328]/15 hover:bg-[#fe7328]/25 border border-[#fe7328]/40 text-[#fe7328] hover:text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm ml-1"
+                      title="Share 1-click invite link, QR code, or open Big Code mode"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-[#fe7328]" />
+                      <span className="hidden sm:inline">Invite</span>
+                    </button>
+                  </div>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#fe7328] border border-[#3b1200] rounded-sm text-xs text-[#32170d] font-bold uppercase font-mono">
-                    {t.roundOver}
-                  </span>
+                  <>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#fe7328] border border-[#3b1200] rounded-sm text-xs text-[#32170d] font-bold uppercase font-mono">
+                      {t.roundOver}
+                    </span>
+                    <button
+                      onClick={() => openInviteModal(false)}
+                      className="px-3 py-1.5 bg-[#fe7328]/15 hover:bg-[#fe7328]/25 border border-[#fe7328]/40 text-[#fe7328] hover:text-white rounded-md text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm ml-1"
+                      title="Share 1-click invite link or QR code"
+                    >
+                      <QrCode className="w-3.5 h-3.5 text-[#fe7328]" />
+                      <span className="hidden sm:inline">Invite QR & Link</span>
+                    </button>
+                  </>
                 )}
-
-                <button
-                  onClick={() => openInviteModal(false)}
-                  className="px-3 py-1.5 bg-[#fe7328]/15 hover:bg-[#fe7328]/25 border border-[#fe7328]/40 text-[#fe7328] hover:text-white rounded-md text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm ml-1"
-                  title="Share 1-click invite link or QR code"
-                >
-                  <QrCode className="w-3.5 h-3.5 text-[#fe7328]" />
-                  <span className="hidden sm:inline">Invite QR & Link</span>
-                </button>
-
-                <button
-                  onClick={() => openInviteModal(true)}
-                  className="px-2.5 py-1.5 bg-yellow-400/20 hover:bg-yellow-400/30 border border-yellow-400/50 text-yellow-300 hover:text-white rounded-md text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1 shadow-sm"
-                  title="Open Big High-Contrast Code Mode for across-the-room viewing"
-                >
-                  <Maximize2 className="w-3.5 h-3.5 text-yellow-400" />
-                  <span className="hidden md:inline font-black">BIG MODE</span>
-                </button>
 
                 <button 
                   onClick={openSettingsModal}
@@ -3456,359 +2912,23 @@ export default function App() {
               
               {/* STAGE VIEW A: LOBBY ROOM */}
               {room.status === 'waiting' && (
-                <div className="space-y-6 max-w-4xl mx-auto w-full my-auto">
-                  {/* Lobby Match Configuration Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 bg-[#200d07]/70 border border-[#006876]/40 px-4 py-3 rounded-xl shadow-inner">
-                    <div className="flex flex-wrap items-center gap-3 text-xs font-mono font-bold text-[#eee8da]">
-                      <span className="flex items-center gap-1.5 text-[#8debfd]">
-                        <Trophy className="w-4 h-4 text-[#fe7328]" />
-                        Target: <span className="text-white">{room.targetScore} PTS</span>
-                      </span>
-                      <span className="text-[#83746f]">•</span>
-                      <span className="flex items-center gap-1.5 text-[#8debfd]">
-                        <Clock className="w-4 h-4 text-[#006876]" />
-                        Turn Timer: <span className="text-white">{room.turnTimer ? `${room.turnTimer} SEC` : 'OFF'}</span>
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-[11px] font-mono font-bold text-[#83746f] uppercase">
-                        Room Code: <span className="text-[#fe7328] font-extrabold">{room.roomCode}</span>
-                      </div>
-                      <button
-                        onClick={() => openInviteModal(false)}
-                        className="px-2.5 py-1 bg-[#fe7328]/15 hover:bg-[#fe7328]/30 border border-[#fe7328]/50 text-[#fe7328] hover:text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
-                        title="Open One-Click Invite Link & QR Code"
-                      >
-                        <QrCode className="w-3.5 h-3.5" />
-                        <span>Invite Link & QR</span>
-                      </button>
-
-                      <button
-                        onClick={() => openInviteModal(true)}
-                        className="px-2.5 py-1 bg-yellow-400/20 hover:bg-yellow-400/35 border border-yellow-400/60 text-yellow-300 hover:text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm font-black"
-                        title="Open High-Contrast Big Mode"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5 text-yellow-400" />
-                        <span>BIG MODE</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Team Selection and Arrow Navigation Bar */}
-                  <div className="bg-[#200d07]/90 border border-[#006876]/40 p-4 rounded-xl shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 flex-wrap justify-center sm:justify-start">
-                      <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#eee8da] flex items-center gap-2">
-                        <Users className="w-4 h-4 text-[#fbbf24]" />
-                        {t.chooseTeam}:
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#fbbf24]/10 border border-[#fbbf24]/30 text-xs font-mono font-bold text-[#fbbf24]">
-                          <span className="w-2 h-2 rounded-full bg-[#fbbf24]" />
-                          Team A (Seats 1 & 3)
-                        </div>
-                        <span className="text-[#83746f] font-mono font-bold text-xs">VS</span>
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/10 border border-teal-500/30 text-xs font-mono font-bold text-teal-300">
-                          <span className="w-2 h-2 rounded-full bg-teal-400" />
-                          Team B (Seats 2 & 4)
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {playerSlot !== null ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => shiftSeat('left')}
-                            disabled={loading}
-                            className="px-3 py-1.5 bg-[#200d07] hover:bg-[#fbbf24] border border-[#fbbf24]/50 hover:border-[#fbbf24] text-[#fbbf24] hover:text-slate-950 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
-                            title="Move 1 Seat Left (←)"
-                          >
-                            <ArrowLeft className="w-3.5 h-3.5" />
-                            <span>{t.moveLeft}</span>
-                          </button>
-
-                          <div className="px-3 py-1.5 rounded-lg bg-black/40 border border-white/10 text-xs font-mono text-center">
-                            <span className="text-white/60">Seat {playerSlot + 1}: </span>
-                            <span className={`font-bold ${playerSlot % 2 === 0 ? 'text-[#fbbf24]' : 'text-teal-300'}`}>
-                              Team {playerSlot % 2 === 0 ? 'A' : 'B'}
-                            </span>
-                          </div>
-
-                          <button
-                            onClick={() => shiftSeat('right')}
-                            disabled={loading}
-                            className="px-3 py-1.5 bg-[#200d07] hover:bg-[#fbbf24] border border-[#fbbf24]/50 hover:border-[#fbbf24] text-[#fbbf24] hover:text-slate-950 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow flex items-center gap-1.5"
-                            title="Move 1 Seat Right (→)"
-                          >
-                            <span>{t.moveRight}</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => takeOpenSeat(undefined, 0)}
-                            disabled={loading}
-                            className="px-3 py-1.5 bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-slate-950 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow flex items-center gap-1"
-                          >
-                            <UserPlus className="w-3.5 h-3.5" />
-                            {t.joinTeamA}
-                          </button>
-                          <button
-                            onClick={() => takeOpenSeat(undefined, 1)}
-                            disabled={loading}
-                            className="px-3 py-1.5 bg-teal-700 hover:bg-teal-600 border border-teal-400 text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow flex items-center gap-1"
-                          >
-                            <UserPlus className="w-3.5 h-3.5" />
-                            {t.joinTeamB}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {room.players.map((player, idx) => {
-                      const teamNum = idx % 2;
-                      const isMe = player && player.id === playerId;
-                      const isCrown = Boolean(player?.isLastDominoWinner || (room.lastDominoWinnerSlot !== null && room.lastDominoWinnerSlot === idx));
-                      
-                      return (
-                        <div 
-                          key={idx}
-                          className={`border rounded-xl p-4 relative flex flex-col items-center text-center justify-between min-h-[220px] transition-all ${
-                            player 
-                              ? isCrown
-                                ? 'bg-gradient-to-b from-amber-400/25 via-yellow-400/15 to-amber-500/25 border-amber-400 text-amber-200 shadow-lg shadow-amber-500/20'
-                                : isMe 
-                                  ? 'bg-[#fbbf24]/10 border-[#fbbf24]/50 shadow-lg shadow-amber-500/10 ring-1 ring-[#fbbf24]/40' 
-                                  : 'bg-[#1c1c1f] border-white/10'
-                              : 'bg-[#141416]/40 border-dashed border-white/10'
-                          }`}
-                        >
-                          <div className="w-full flex items-center justify-between mb-2">
-                            <span className={`text-[10px] font-mono font-bold tracking-wider uppercase px-2.5 py-0.5 rounded-full ${
-                              teamNum === 0 
-                                ? 'bg-[#fbbf24]/15 border border-[#fbbf24]/30 text-[#fbbf24]' 
-                                : 'bg-teal-500/15 border border-teal-500/30 text-teal-300'
-                            }`}>
-                              Team {teamNum === 0 ? 'A' : 'B'}
-                            </span>
-                            
-                            <span className="text-[10px] font-mono text-white/40 font-bold">
-                              Seat {idx + 1}
-                            </span>
-                          </div>
-
-                          {player ? (
-                            <div className="space-y-2 flex-1 flex flex-col justify-center w-full">
-                              <div className="w-12 h-12 rounded-full bg-[#111113] border border-white/10 flex items-center justify-center text-lg mx-auto shadow-md relative">
-                                {player.type === 'bot' ? '🤖' : '👤'}
-                                {(player.isHost || (room.hostId && room.hostId !== 'hidden' && room.hostId === player.id) || (!room.hostId && idx === 0)) && (
-                                  <span className="absolute -top-1 -right-1 bg-[#fe7328] text-[#111113] w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow" title={t.hostBadge}>⭐</span>
-                                )}
-                                {(player.isLastDominoWinner || room.lastDominoWinnerSlot === idx) && (
-                                  <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center shadow" title="Last Domino Winner 👑">👑</span>
-                                )}
-                              </div>
-                              <div>
-                                <p className="font-bold text-sm text-white flex items-center justify-center gap-1 flex-wrap">
-                                  <span>{player.name}</span>
-                                  {isMe && <span className="text-[9px] bg-[#fbbf24] text-slate-950 px-1.5 py-0.2 rounded-md font-sans font-bold shadow-sm">YOU</span>}
-                                  {(player.isHost || (room.hostId && room.hostId !== 'hidden' && room.hostId === player.id) || (!room.hostId && idx === 0)) && (
-                                    <span className="text-[8px] bg-[#fe7328]/20 border border-[#fe7328]/50 text-[#fe7328] px-1.5 py-0.5 rounded font-mono font-bold uppercase">{t.hostBadge}</span>
-                                  )}
-                                  {player.dominoStreak && player.dominoStreak > 1 && (
-                                    <span className="text-[9px] bg-gradient-to-r from-amber-500 to-red-500 text-white px-1.5 py-0.2 rounded-full font-mono font-black animate-pulse" title={`${player.dominoStreak} Domino Wins in a Row!`}>
-                                      🔥 {player.dominoStreak}x
-                                    </span>
-                                  )}
-                                </p>
-                                {player.type === 'bot' ? (
-                                  <div className="mt-1 flex flex-col items-center gap-1">
-                                    {isHost ? (
-                                      <select
-                                        value={player.botDifficulty || room.defaultBotDifficulty || 'intermediate'}
-                                        onChange={(e) => changeBotDifficulty(idx, e.target.value as BotDifficulty)}
-                                        className="bg-[#111113] border border-amber-500/40 text-amber-300 font-mono text-[10px] font-bold rounded-md px-1.5 py-0.5 focus:outline-none focus:border-amber-400 cursor-pointer text-center shadow-sm"
-                                        title="Change this bot's skill level"
-                                      >
-                                        <option value="novice">🎲 Novice</option>
-                                        <option value="intermediate">⚡ Intermediate</option>
-                                        <option value="pro">🧠 Pro Master</option>
-                                      </select>
-                                    ) : (
-                                      <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-md border uppercase flex items-center gap-1 ${
-                                        (player.botDifficulty || room.defaultBotDifficulty) === 'pro'
-                                          ? 'bg-purple-950/60 border-purple-400/50 text-purple-300'
-                                          : (player.botDifficulty || room.defaultBotDifficulty) === 'novice'
-                                          ? 'bg-emerald-950/60 border-emerald-400/50 text-emerald-300'
-                                          : 'bg-amber-950/60 border-amber-400/50 text-amber-300'
-                                      }`}>
-                                        {(player.botDifficulty || room.defaultBotDifficulty) === 'pro' ? '🧠 Pro Master' : (player.botDifficulty || room.defaultBotDifficulty) === 'novice' ? '🎲 Novice' : '⚡ Intermediate'}
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : player.isDisconnected ? (
-                                  <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 rounded font-mono font-bold mt-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                                    ⚠️ {t.playerDisconnected}
-                                  </span>
-                                ) : (
-                                  <p className="text-[10px] text-white/40 mt-0.5 font-sans">Human Player</p>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex-1 flex flex-col justify-center items-center text-white/40 space-y-2 w-full py-2">
-                              <div className="w-10 h-10 rounded-full border border-dashed border-white/20 flex items-center justify-center text-white/30">
-                                <UserPlus className="w-5 h-5 stroke-1 text-white/30" />
-                              </div>
-                              <p className="text-xs font-medium text-white/50">Vacant Seat {idx + 1}</p>
-
-                              {playerSlot === null && (
-                                <button
-                                  onClick={() => takeOpenSeat(idx)}
-                                  disabled={loading}
-                                  className={`mt-1 py-1.5 px-3 rounded-lg font-mono text-[11px] font-bold uppercase transition-all cursor-pointer shadow flex items-center justify-center gap-1 ${
-                                    teamNum === 0
-                                      ? 'bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-slate-950'
-                                      : 'bg-teal-700 hover:bg-teal-600 text-white'
-                                  }`}
-                                >
-                                  <UserPlus className="w-3.5 h-3.5" />
-                                  Take Seat {idx + 1}
-                                </button>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Footer Actions */}
-                          {player && isMe && (
-                            <div className="w-full pt-2 flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => shiftSeat('left')}
-                                disabled={loading}
-                                className="flex-1 py-1.5 px-1.5 bg-[#200d07] hover:bg-[#fbbf24] border border-[#fbbf24]/40 hover:border-[#fbbf24] text-[#fbbf24] hover:text-slate-950 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm"
-                                title="Move Left"
-                              >
-                                <ArrowLeft className="w-3 h-3" />
-                                <span>{t.moveLeft}</span>
-                              </button>
-                              <button
-                                onClick={() => shiftSeat('right')}
-                                disabled={loading}
-                                className="flex-1 py-1.5 px-1.5 bg-[#200d07] hover:bg-[#fbbf24] border border-[#fbbf24]/40 hover:border-[#fbbf24] text-[#fbbf24] hover:text-slate-950 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm"
-                                title="Move Right"
-                              >
-                                <span>{t.moveRight}</span>
-                                <ArrowRight className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
-
-                          {player && isHost && !isMe && (
-                            <div className="w-full pt-2 flex items-center justify-center">
-                              <button
-                                onClick={() => removeSlot(idx)}
-                                className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 hover:bg-red-950/40 px-2.5 py-1 rounded-md border border-red-800/40 transition-all cursor-pointer flex items-center justify-center gap-1"
-                                title={`Remove ${player.name} from this seat`}
-                              >
-                                <span>✕</span> {player.type === 'bot' ? 'Remove Bot' : t.kickSlot}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Spectators watching list in lobby stage */}
-                  {room.spectators && room.spectators.length > 0 && (
-                    <div className="p-3 rounded-xl bg-[#200d07]/60 border border-[#83746f]/30 flex items-center justify-between text-xs font-mono">
-                      <div className="flex items-center gap-2">
-                        <Eye className="w-4 h-4 text-[#fe7328] shrink-0" />
-                        <span className="text-[#eee8da] font-bold">Spectators ({room.spectators.length}):</span>
-                        <span className="text-[#8debfd] font-semibold truncate max-w-md">
-                          {room.spectators.map(s => s.name).join(', ')}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-white/5">
-                    <div>
-                      {!isHost && (
-                        <div className="flex items-center gap-2 text-xs font-mono text-[#8debfd] italic bg-[#006876]/20 border border-[#006876]/40 px-3.5 py-2 rounded-xl">
-                          <span className="w-2 h-2 rounded-full bg-[#8debfd] animate-pulse" />
-                          {t.waitingForHost}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-3 w-full sm:w-auto justify-end flex-wrap">
-                      {isHost ? (
-                        <>
-                          <div className="flex items-center gap-1.5 bg-[#161619] border border-amber-500/30 px-3 py-2 rounded-xl font-mono text-xs">
-                            <Bot className="w-4 h-4 text-[#fbbf24]" />
-                            <span className="text-[10px] font-bold text-white/60 uppercase hidden sm:inline">{t.botSkillLevel}:</span>
-                            <select
-                              value={room.defaultBotDifficulty || 'intermediate'}
-                              onChange={(e) => changeDefaultBotDifficulty(e.target.value as BotDifficulty)}
-                              className="bg-[#0e0e10] border border-white/15 text-[#fbbf24] font-mono font-bold text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-amber-400 cursor-pointer"
-                              title="Set default skill level for newly added or auto-filled bots"
-                            >
-                              <option value="novice">🎲 Novice</option>
-                              <option value="intermediate">⚡ Intermediate</option>
-                              <option value="pro">🧠 Pro Master</option>
-                            </select>
-                          </div>
-
-                          <button
-                            onClick={exitRoom}
-                            className="px-4 py-3 rounded-xl bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 text-red-300 font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer uppercase font-mono shadow"
-                            title="Close and delete lobby completely for everyone"
-                          >
-                            <LogOut className="w-4 h-4 text-red-400" />
-                            Close Lobby
-                          </button>
-
-                          <button
-                            onClick={() => addBot()}
-                            disabled={room.players.every(p => p !== null)}
-                            className="px-5 py-3 rounded-xl bg-[#1c1c1f] hover:bg-white/10 border border-amber-400/30 text-white font-semibold text-xs transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer uppercase font-mono shadow-md"
-                            title={room.players.every(p => p !== null) ? "Table is full (4/4)" : "Automatically adds a bot to the first vacant space"}
-                          >
-                            <Bot className="w-4 h-4 text-[#fbbf24]" />
-                            <span>{t.addBotBtn}</span>
-                            {room.players.some(p => p === null) && (
-                              <span className="text-[10px] bg-[#fbbf24]/20 text-[#fbbf24] px-1.5 py-0.5 rounded font-mono font-bold">
-                                Auto
-                              </span>
-                            )}
-                          </button>
-
-                          <button
-                            onClick={startGame}
-                            className="px-6 py-3 rounded-xl bg-[#fbbf24] hover:bg-[#fbbf24]/90 text-[#111113] font-sans font-bold text-xs shadow-lg flex items-center gap-1.5 transition-all cursor-pointer uppercase tracking-wider font-mono"
-                          >
-                            <Play className="w-4 h-4 fill-[#111113]" />
-                            {t.startGameBtn}
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={exitRoom}
-                          className="px-4 py-3 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-800/40 text-red-300 font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer uppercase font-mono shadow"
-                          title="Leave this table"
-                        >
-                          <LogOut className="w-4 h-4 text-red-400" />
-                          Leave Lobby
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <MatchLobbyView
+                  room={room}
+                  playerId={playerId}
+                  playerSlot={playerSlot}
+                  isHost={isHost}
+                  loading={loading}
+                  t={t}
+                  shiftSeat={shiftSeat}
+                  switchSlot={switchSlot}
+                  takeOpenSeat={takeOpenSeat}
+                  addBot={addBot}
+                  removeSlot={removeSlot}
+                  changeBotDifficulty={changeBotDifficulty}
+                  changeDefaultBotDifficulty={changeDefaultBotDifficulty}
+                  startGame={startGame}
+                  exitRoom={exitRoom}
+                />
               )}
 
               {/* STAGE VIEW B: PLAYING FIELD */}
@@ -3937,22 +3057,6 @@ export default function App() {
                             <div className="w-full bg-black/40 h-1 rounded-full overflow-hidden mt-1 max-w-[140px]">
                               <div className={`h-full transition-all duration-300 ${remSec <= 5 ? 'bg-red-500' : remSec <= 10 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${ratio * 100}%` }} />
                             </div>
-                          )}
-                          {canAskBotPartnerToStart && isBot && (
-                            <button
-                              type="button"
-                              onClick={letBotPartnerStartWithDouble}
-                              disabled={botStartingLoading}
-                              className="mt-1.5 px-3 py-1 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] active:scale-95 text-slate-950 font-mono font-bold text-[10px] shadow-md border border-[#f59e0b] flex items-center gap-1.5 transition-all cursor-pointer"
-                              title="Ask your bot partner to open the round with their highest double"
-                            >
-                              {botStartingLoading ? (
-                                <RefreshCw className="w-3 h-3 animate-spin text-slate-950" />
-                              ) : (
-                                <Sparkles className="w-3 h-3 text-slate-950" />
-                              )}
-                              <span>{botStartingLoading ? "Asking Partner..." : "🤖 Start Round (Double)"}</span>
-                            </button>
                           )}
                         </div>
                       );
@@ -4691,7 +3795,6 @@ export default function App() {
                               <Reorder.Item
                                 key={stableKey}
                                 value={item}
-                                axis="x"
                                 drag="x"
                                 dragConstraints={reorderGroupRef}
                                 dragElastic={0}
@@ -4837,37 +3940,30 @@ export default function App() {
                           const isFaceDown = isHandHidden && !isPeeking;
 
                           return (
-                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between bg-emerald-500/10 border border-emerald-500/25 px-4 py-3 rounded-2xl gap-3 shadow-xl backdrop-blur-md">
-                              <div className="flex items-center gap-3">
-                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between bg-emerald-500/10 border border-emerald-500/25 px-4 py-2.5 rounded-xl gap-3 shadow-lg backdrop-blur-md">
+                              <div className="flex items-center gap-2.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
                                 <div className="flex flex-col">
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs font-bold text-emerald-300 font-mono tracking-wide uppercase">
-                                      {room.board.length === 0 ? "Opening Domino" : "Your Turn to Play"}
+                                      {room.board.length === 0 ? "Opening Play" : "Your Turn"}
                                     </span>
                                     {selectedItem && isSelectedPlayable && (
                                       <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 font-mono font-bold text-xs">
-                                        {isFaceDown ? "[🔒|🔒] Selected" : `[${selectedItem.val[0]}|${selectedItem.val[1]}] Selected`}
-                                      </span>
-                                    )}
-                                    {room.board.length === 0 && !myHandHasDoubles && canAskBotPartnerToStart && (
-                                      <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-400/40 text-[#fbbf24] font-mono font-bold text-[10px] hidden sm:inline-flex items-center gap-1">
-                                        <Sparkles className="w-2.5 h-2.5" /> No doubles in hand
+                                        {isFaceDown ? "[🔒|🔒]" : `[${selectedItem.val[0]}|${selectedItem.val[1]}]`}
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-[11px] text-white/80 font-sans mt-0.5">
+                                  <span className="text-[11px] text-white/60 font-sans mt-0.5">
                                     {selectedItem && isSelectedPlayable
                                       ? room.board.length === 0
-                                        ? "Click Place button, press Space/Enter, or click the tile again to start match."
+                                        ? "Click Place to begin the chain."
                                         : matchesLeft && matchesRight
-                                          ? "Matches both ends! Choose Left or Right below."
-                                          : `Matches ${matchesLeft ? 'Left' : 'Right'} end. Click Play button, press Space/Enter, or click tile again.`
+                                          ? "Matches both ends. Choose Left or Right."
+                                          : `Matches ${matchesLeft ? 'Left' : 'Right'} end. Click Play.`
                                       : room.board.length === 0
-                                        ? canAskBotPartnerToStart
-                                          ? `Play any tile to open, or let ${botPartner?.name || 'your bot partner'} start with their highest double.`
-                                          : "Drag to organize, or click any tile to select and open the match."
-                                        : "Drag freely to organize, or click a highlighted tile to select and play."}
+                                        ? "Select a domino from your hand to open the round."
+                                        : "Select a playable domino from your hand."}
                                   </span>
                                 </div>
                               </div>
@@ -4878,7 +3974,7 @@ export default function App() {
                                     type="button"
                                     onClick={letBotPartnerStartWithDouble}
                                     disabled={botStartingLoading}
-                                    className="px-4 py-2 bg-[#fbbf24] hover:bg-[#f59e0b] active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg border border-[#f59e0b] transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                                    className="px-3.5 py-1.5 bg-[#fbbf24] hover:bg-[#f59e0b] active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-lg shadow-md border border-[#f59e0b] transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
                                     title={t.letBotStartDoubleDesc}
                                   >
                                     {botStartingLoading ? (
@@ -4886,7 +3982,7 @@ export default function App() {
                                     ) : (
                                       <Sparkles className="w-3.5 h-3.5 text-slate-950" />
                                     )}
-                                    <span>{botStartingLoading ? t.askingBotPartner : `🤖 Let ${botPartner?.name || 'Bot'} Start (Double)`}</span>
+                                    <span>{botStartingLoading ? t.askingBotPartner : `Let ${botPartner?.name || 'Partner'} Start`}</span>
                                   </button>
                                 )}
                                 {selectedItem && isSelectedPlayable ? (
@@ -4894,17 +3990,17 @@ export default function App() {
                                     <button
                                       type="button"
                                       onClick={() => confirmPlayTile(selectedServerIdx!, 'right')}
-                                      className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/30 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                                      className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-lg shadow-md shadow-emerald-500/30 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
                                     >
                                       <Play className="w-3.5 h-3.5 fill-current" />
-                                      <span>{isFaceDown ? "Place Selected Tile" : `Place [${selectedItem.val[0]}|${selectedItem.val[1]}]`}</span>
+                                      <span>{isFaceDown ? "Place Domino" : `Place [${selectedItem.val[0]}|${selectedItem.val[1]}]`}</span>
                                     </button>
                                   ) : matchesLeft && matchesRight ? (
                                     <div className="flex items-center gap-2">
                                       <button
                                         type="button"
                                         onClick={() => confirmPlayTile(selectedServerIdx!, 'left')}
-                                        className="px-3.5 py-2 bg-[#006876] hover:bg-[#007a8a] text-white font-mono font-bold text-xs rounded-xl shadow-lg border border-[#8debfd]/40 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                                        className="px-3.5 py-1.5 bg-[#006876] hover:bg-[#007a8a] text-white font-mono font-bold text-xs rounded-lg shadow-md border border-[#8debfd]/40 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
                                       >
                                         <ArrowLeft className="w-3.5 h-3.5" />
                                         <span>Left ({leftVal})</span>
@@ -4912,7 +4008,7 @@ export default function App() {
                                       <button
                                         type="button"
                                         onClick={() => confirmPlayTile(selectedServerIdx!, 'right')}
-                                        className="px-3.5 py-2 bg-[#006876] hover:bg-[#007a8a] text-white font-mono font-bold text-xs rounded-xl shadow-lg border border-[#8debfd]/40 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                                        className="px-3.5 py-1.5 bg-[#006876] hover:bg-[#007a8a] text-white font-mono font-bold text-xs rounded-lg shadow-md border border-[#8debfd]/40 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
                                       >
                                         <span>Right ({rightVal})</span>
                                         <ArrowRight className="w-3.5 h-3.5" />
@@ -4922,18 +4018,14 @@ export default function App() {
                                     <button
                                       type="button"
                                       onClick={() => confirmPlayTile(selectedServerIdx!, matchesLeft ? 'left' : 'right')}
-                                      className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/30 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+                                      className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-mono font-bold text-xs rounded-lg shadow-md shadow-emerald-500/30 transition-all cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
                                     >
                                       {matchesLeft ? <ArrowLeft className="w-3.5 h-3.5" /> : null}
-                                      <span>{isFaceDown ? `Play ${matchesLeft ? 'Left' : 'Right'}` : `Play [${selectedItem.val[0]}|${selectedItem.val[1]}] ${matchesLeft ? 'Left' : 'Right'}`}</span>
+                                      <span>{isFaceDown ? `Play ${matchesLeft ? 'Left' : 'Right'}` : `Play [${selectedItem.val[0]}|${selectedItem.val[1]}]`}</span>
                                       {matchesRight ? <ArrowRight className="w-3.5 h-3.5" /> : null}
                                     </button>
                                   )
-                                ) : (
-                                  <span className="text-[10px] font-mono text-emerald-400/80 uppercase tracking-widest hidden md:inline-block">
-                                    🖐️ Drag to organize hand
-                                  </span>
-                                )}
+                                ) : null}
                               </div>
                             </div>
                           );
@@ -6013,54 +5105,11 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Section 5: Audio Settings */}
+                {/* Section 5: Sound Effects */}
                 <div className="space-y-3 pt-4 border-t border-white/10">
                   <label className="block text-xs font-mono uppercase tracking-widest text-[#8debfd] font-bold">
                     {t.audioTitle}
                   </label>
-                  
-                  {/* Track Selection */}
-                  <div className="flex items-center justify-between bg-[#111113] p-3.5 rounded-xl border border-white/10">
-                    <span className="text-xs font-mono text-white/80">{t.musicTrack}</span>
-                    <div className="flex gap-1.5">
-                      {(['jazz', 'fairy', 'havana'] as const).map((track) => (
-                        <button
-                          key={track}
-                          type="button"
-                          onClick={() => {
-                            setCurrentTrack(track);
-                            localStorage.setItem('cuban_dominoes_track', track);
-                          }}
-                          className={`px-2.5 py-1 text-[10px] font-mono font-bold uppercase rounded-md border transition-all cursor-pointer ${
-                            currentTrack === track
-                              ? 'bg-[#fe7328] border-[#fe7328] text-[#111113]'
-                              : 'bg-transparent border-white/10 text-white/50 hover:text-white'
-                          }`}
-                        >
-                          {track === 'jazz' ? 'Jazz' : track === 'fairy' ? 'Fairy' : 'Havana'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Background Music Toggle */}
-                  <div className="flex items-center justify-between bg-[#111113] p-3.5 rounded-xl border border-white/10">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-mono text-white font-bold block">{t.bgMusic}</span>
-                      <span className="text-[10px] font-sans text-white/50 block">Ambient background melody tracks</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSettingsMusicEnabled(!settingsMusicEnabled)}
-                      className={`px-3.5 py-1.5 text-xs font-mono font-bold uppercase rounded-md border transition-all cursor-pointer ${
-                        settingsMusicEnabled
-                          ? 'bg-[#006876] border-[#8debfd] text-white shadow-sm'
-                          : 'bg-transparent border-white/10 text-white/40'
-                      }`}
-                    >
-                      {settingsMusicEnabled ? t.musicOn : t.musicOff}
-                    </button>
-                  </div>
 
                   {/* Sound Effects Toggle */}
                   <div className="flex items-center justify-between bg-[#111113] p-3.5 rounded-xl border border-white/10">
